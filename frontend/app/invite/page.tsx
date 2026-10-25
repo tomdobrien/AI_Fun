@@ -18,7 +18,10 @@ export default function InvitePage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    const inviteToken = new URLSearchParams(window.location.search).get("token") ?? "";
+    const inviteToken = new URLSearchParams(window.location.hash.slice(1)).get("token")
+      ?? new URLSearchParams(window.location.search).get("token")
+      ?? "";
+    window.history.replaceState(null, "", window.location.pathname);
     setToken(inviteToken);
     if (!inviteToken) {
       setError("This invitation link is missing its token.");

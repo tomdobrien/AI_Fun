@@ -109,7 +109,10 @@ export const api = {
     if (!response.ok) throw new Error(await errorMessage(response, "Could not disable account."));
   },
   async getUploadInvite(token: string): Promise<UploadInviteDetails> {
-    const response = await fetch(`${apiBaseUrl}/api/upload/invitations/${encodeURIComponent(token)}`, { cache: "no-store" });
+    const response = await fetch(`${apiBaseUrl}/api/upload/invitations/validate`, {
+      method: "POST", cache: "no-store", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
     if (!response.ok) throw new Error(await errorMessage(response, "This invitation is invalid, expired, or already used."));
     return response.json() as Promise<UploadInviteDetails>;
   },

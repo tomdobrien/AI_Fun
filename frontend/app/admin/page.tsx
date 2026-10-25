@@ -202,7 +202,7 @@ export default function AdminPage() {
     setInviteUrl("");
     try {
       const invitation = await api.createUploadInvitation(inviteEmail, inviteName);
-      setInviteUrl(`${window.location.origin}${siteBasePath}/invite/?token=${encodeURIComponent(invitation.token)}`);
+      setInviteUrl(`${window.location.origin}${siteBasePath}/invite/#token=${encodeURIComponent(invitation.token)}`);
       setAccountNotice(`Invitation created for ${invitation.email}. Share the link below; it expires in 7 days and can be used once.`);
       setInviteEmail("");
       setInviteName("");

@@ -9,7 +9,7 @@ from pathlib import Path
 from urllib.parse import unquote
 from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, Field, SecretStr
 from sqlalchemy import select, text, update
 from sqlalchemy.orm import Session
 from app.api.admin_auth import (
@@ -24,7 +24,7 @@ from app.api.admin_auth import (
     require_upload_access,
     upload_session_user_id,
 )
-from app.api.upload_auth import hash_password, verify_password
+from app.api.upload_auth import hash_password, password_needs_rehash, verify_password
 from app.config import settings
 from app.database import get_db
 from app.models.upload_user import UploadInvitation, UploadUser, utcnow
@@ -84,8 +84,12 @@ class InvitationCreateRequest(BaseModel):
 
 
 class InvitationAcceptRequest(BaseModel):
-    token: str
+    token: str = Field(max_length=128)
     password: SecretStr
+
+
+class InvitationLookupRequest(BaseModel):
+    token: str = Field(max_length=128)
 
 
 def _normalize_email(value: str) -> str:
@@ -279,13 +283,15 @@ def accept_upload_invitation(
     return {"status": "created", "email": user.email, "userId": user.id}
 
 
-@router.get("/upload/invitations/{token}", tags=["upload"])
+@router.post("/upload/invitations/validate", tags=["upload"])
 def get_upload_invitation(
-    token: str,
+    data: InvitationLookupRequest,
+    request: Request,
     response: Response,
     db: Session = Depends(get_db),
+    _origin: None = Depends(require_frontend_origin),
 ) -> dict[str, str | None]:
-    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    token_hash = hashlib.sha256(data.token.encode("utf-8")).hexdigest()
     invitation = db.scalar(select(UploadInvitation).where(UploadInvitation.token_hash == token_hash))
     if invitation is None or invitation.accepted_at is not None or invitation.revoked_at is not None:
         raise HTTPException(status_code=404, detail="This invitation is invalid, expired, or already used")
@@ -305,9 +311,15 @@ def upload_user_login(
     _origin: None = Depends(require_frontend_origin),
 ) -> dict[str, str | int | None]:
     email = _normalize_email(data.email)
-    user = db.scalar(select(UploadUser).where(UploadUser.email == email))
-    if user is None or user.disabled_at is not None or not verify_password(data.password.get_secret_value(), user.password_hash):
+    password = data.password.get_secret_value()
+    if len(password) > 256:
         raise HTTPException(status_code=401, detail="Email or password is incorrect")
+    user = db.scalar(select(UploadUser).where(UploadUser.email == email))
+    if user is None or user.disabled_at is not None or not verify_password(password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Email or password is incorrect")
+    if password_needs_rehash(user.password_hash):
+        user.password_hash = hash_password(password)
+        db.commit()
     response.headers["Cache-Control"] = "no-store"
     return {"status": "authenticated", "token": create_upload_session(user.id), "email": user.email, "displayName": user.display_name}
 
