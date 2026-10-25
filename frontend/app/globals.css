@@ -14,6 +14,9 @@
 .admin-intro { margin:10px 0 0; color:var(--muted); }
 .admin-home-link { flex:0 0 auto; font-size:14px; font-weight:600; }
 .admin-form { display:grid; gap:18px; }
+.admin-upload-card { margin-bottom:18px; }
+.admin-upload-form { display:grid; gap:10px; }
+.admin-upload-form .primary-button { justify-self:start; }
 .admin-card { padding:clamp(20px,4vw,30px); border:1px solid var(--border); border-radius:var(--radius); background:var(--raised); box-shadow:var(--shadow); }
 .admin-section-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:22px; }
 .admin-section-heading .eyebrow { margin-bottom:3px; }
@@ -38,7 +41,7 @@
 .admin-savebar { position:sticky; bottom:14px; display:flex; align-items:center; justify-content:space-between; gap:16px; padding:14px 18px; border:1px solid var(--border); border-radius:12px; background:rgba(255,255,255,.96); box-shadow:0 8px 28px rgba(23,38,38,.12); backdrop-filter:blur(10px); }
 .admin-savebar p { margin:0; color:var(--muted); font-size:13px; }
 .admin-savebar .primary-button:disabled { opacity:.65; cursor:wait; }
-@media (max-width:620px) { .admin-shell { padding:28px 16px 60px; } .admin-header { align-items:flex-start; flex-direction:column; } .admin-field-grid { grid-template-columns:1fr; } .admin-field-wide { grid-column:auto; } .admin-section-heading { align-items:flex-start; } .admin-savebar { align-items:stretch; flex-direction:column; } .admin-savebar .primary-button { width:100%; } }
+@media (max-width:620px) { .admin-shell { padding:28px 16px 60px; } .admin-header { align-items:flex-start; flex-direction:column; } .admin-field-grid { grid-template-columns:1fr; } .admin-field-wide { grid-column:auto; } .admin-section-heading { align-items:flex-start; } .admin-savebar { align-items:stretch; flex-direction:column; } .admin-savebar .primary-button,.admin-upload-form .primary-button { width:100%; } }
 .topbar-contact { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:4px 16px; color:var(--muted); font-size:13px; }
 .topbar-contact a { color:var(--primary); }
 .resume-section-wide { grid-column:1 / -1; }

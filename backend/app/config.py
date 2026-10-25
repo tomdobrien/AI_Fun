@@ -6,6 +6,8 @@ class Settings(BaseSettings):
     frontend_origin: str = "http://localhost:3000"
     admin_password: str | None = None
     admin_session_secret: str | None = None
+    photo_upload_dir: str = "./data/photos"
+    photo_upload_mount: str | None = None
     model_config = SettingsConfigDict(env_file=(".env", "backend/.env"), extra="ignore")
 
     @property

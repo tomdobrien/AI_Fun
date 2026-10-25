@@ -34,6 +34,22 @@ export const api = {
     }
     return response.json() as Promise<Profile>;
   },
+  async uploadPhoto(file: File): Promise<{ filename: string; bytes: number }> {
+    const response = await fetch(`${apiBaseUrl}/api/admin/photos`, {
+      method: "POST",
+      credentials: "omit",
+      headers: {
+        "Content-Type": "application/octet-stream",
+        "X-File-Name": encodeURIComponent(file.name),
+        ...adminAuthorization(),
+      },
+      body: file,
+    });
+    if (!response.ok) {
+      throw new Error(await errorMessage(response, `Upload failed for ${file.name}.`));
+    }
+    return response.json() as Promise<{ filename: string; bytes: number }>;
+  },
   async getAdminSession(): Promise<boolean> {
     if (!adminSessionToken) return false;
     const response = await fetch(`${apiBaseUrl}/api/admin/session`, {

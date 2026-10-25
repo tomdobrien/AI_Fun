@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import type { Award, Education, Experience, Profile, ProfileLink, SelectedWork, Skill } from "@/lib/types";
 import ThemeToggle from "../theme-toggle";
@@ -49,6 +49,12 @@ export default function AdminPage() {
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const [photoFiles, setPhotoFiles] = useState<File[]>([]);
+  const [uploadingPhotos, setUploadingPhotos] = useState(false);
+  const [photoProgress, setPhotoProgress] = useState("");
+  const [photoNotice, setPhotoNotice] = useState("");
+  const [photoError, setPhotoError] = useState("");
+  const photoInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     api.getAdminSession()
@@ -136,13 +142,41 @@ export default function AdminPage() {
     }
   }
 
+  async function uploadPhotos(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (photoFiles.length === 0) return;
+    setUploadingPhotos(true);
+    setPhotoNotice("");
+    setPhotoError("");
+    let uploaded = 0;
+    for (const file of photoFiles) {
+      setPhotoProgress(`Uploading ${uploaded + 1} of ${photoFiles.length}: ${file.name}`);
+      try {
+        await api.uploadPhoto(file);
+        uploaded += 1;
+      } catch (cause) {
+        setPhotoError(`${uploaded} of ${photoFiles.length} uploaded. ${cause instanceof Error ? cause.message : "Upload failed."}`);
+        setPhotoFiles(photoFiles.slice(uploaded));
+        if (photoInputRef.current) photoInputRef.current.value = "";
+        setPhotoProgress("");
+        setUploadingPhotos(false);
+        return;
+      }
+    }
+    setPhotoProgress("");
+    setPhotoNotice(`${uploaded} ${uploaded === 1 ? "file was" : "files were"} saved to your Pi photo folder.`);
+    setPhotoFiles([]);
+    if (photoInputRef.current) photoInputRef.current.value = "";
+    setUploadingPhotos(false);
+  }
+
   return (
     <main className="admin-shell">
       <header className="admin-header">
         <div>
           <p className="eyebrow">Profile editor</p>
           <h1>Manage your profile</h1>
-          <p className="admin-intro">Changes saved here appear on your homepage.</p>
+          <p className="admin-intro">Edit your profile or send photos and videos to private Pi storage.</p>
         </div>
         <div className="admin-header-actions">{authenticated && <button className="secondary-button" type="button" onClick={logout}>Log out</button>}<ThemeToggle /><a className="admin-home-link" href={`${siteBasePath}/`}>← View homepage</a></div>
       </header>
@@ -151,7 +185,7 @@ export default function AdminPage() {
         <form className="admin-login-card" onSubmit={login}>
           <p className="eyebrow">Private area</p>
           <h2>Admin sign in</h2>
-          <p className="admin-intro">Enter your password to manage the profile shown on the homepage.</p>
+          <p className="admin-intro">Enter your password to edit your profile or upload to private storage.</p>
           {authError && <p className="notice notice-error" role="alert">{authError}</p>}
           <label className="admin-field">Password
             <input type="password" autoComplete="current-password" required value={loginPassword} onChange={(event) => setLoginPassword(event.target.value)} />
@@ -159,6 +193,22 @@ export default function AdminPage() {
           <button className="primary-button" type="submit" disabled={loggingIn}>{loggingIn ? "Signing in…" : "Sign in"}</button>
         </form>
       ) : loading ? <p className="notice" role="status">Loading your profile…</p> : (
+        <>
+        <section className="admin-card admin-upload-card" aria-labelledby="photo-upload-heading">
+          <div className="admin-section-heading"><div><p className="eyebrow">Private storage</p><h2 id="photo-upload-heading">Phone photo backup</h2></div></div>
+          <p className="admin-intro">Choose photos or videos from this device. They’ll be copied to the photo folder on your Pi and won’t appear on the public homepage.</p>
+          <form className="admin-upload-form" onSubmit={uploadPhotos}>
+            <label className="admin-field">Photos and videos
+              <input ref={photoInputRef} type="file" accept="image/*,video/*" multiple disabled={uploadingPhotos} onChange={(event) => { setPhotoFiles(Array.from(event.target.files ?? [])); setPhotoNotice(""); setPhotoError(""); }} />
+            </label>
+            <p className="field-hint">Up to 100 MB per file. Originals are copied; the phone keeps its files.</p>
+            {photoFiles.length > 0 && <p className="admin-empty">{photoFiles.length} {photoFiles.length === 1 ? "file" : "files"} selected</p>}
+            {photoProgress && <p className="notice" role="status">{photoProgress}</p>}
+            {photoNotice && <p className="notice notice-success" role="status">{photoNotice}</p>}
+            {photoError && <p className="notice notice-error" role="alert">{photoError}</p>}
+            <button className="primary-button" type="submit" disabled={uploadingPhotos || photoFiles.length === 0}>{uploadingPhotos ? "Uploading…" : "Upload to Pi"}<span aria-hidden="true">↑</span></button>
+          </form>
+        </section>
         <form className="admin-form" onSubmit={saveProfile}>
           {error && <p className="notice notice-error" role="alert">{error}</p>}
           {notice && <p className="notice notice-success" role="status">{notice}</p>}
@@ -269,6 +319,7 @@ export default function AdminPage() {
 
           <div className="admin-savebar"><p>Remember to save when you’re done.</p><button className="primary-button" type="submit" disabled={saving}>{saving ? "Saving…" : "Save profile"}<span aria-hidden="true">✓</span></button></div>
         </form>
+        </>
       )}
     </main>
   );

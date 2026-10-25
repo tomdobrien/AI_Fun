@@ -19,6 +19,7 @@ frontend/out/
 frontend/next-env.d.ts
 data/*.db
 data/*.db-*
+data/photos/
 .idea/
 .DS_Store
 Thumbs.db
