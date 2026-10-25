@@ -1,0 +1,10 @@
+{
+  "name": "personal-profile",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "backend": "backend/.venv/Scripts/python.exe -m uvicorn app.main:app --app-dir backend --reload --port 8000",
+    "frontend": "npm --prefix frontend run dev",
+    "dev": "node scripts/dev.js"
+  }
+}

@@ -3,7 +3,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.repositories.profile_repository import ProfileRepository
-from app.schemas import ProfileResponse
+from app.schemas import ProfileResponse, ProfileUpdate
 from app.services.profile_service import ProfileService
 
 router = APIRouter(prefix="/api")
@@ -19,3 +19,7 @@ def health(db: Session = Depends(get_db)) -> dict[str, str]:
 @router.get("/profile", response_model=ProfileResponse, response_model_by_alias=True, tags=["profile"])
 def get_profile(db: Session = Depends(get_db)) -> ProfileResponse:
     return ProfileService(ProfileRepository(db)).get_profile()
+
+@router.put("/profile", response_model=ProfileResponse, response_model_by_alias=True, tags=["profile"])
+def update_profile(data: ProfileUpdate, db: Session = Depends(get_db)) -> ProfileResponse:
+    return ProfileService(ProfileRepository(db)).update_profile(data)

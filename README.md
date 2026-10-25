@@ -9,7 +9,15 @@ A local-first personal profile and resume site: FastAPI + SQLAlchemy + SQLite be
 
 ## Run locally
 
-Run the backend and frontend in separate terminals from the repository root.
+Run the services from the repository root with npm:
+
+```powershell
+npm run backend   # Backend only
+npm run frontend  # Frontend only
+npm run dev       # Both services; Ctrl+C stops both
+```
+
+In VS Code, open **Explorer** in the left sidebar, then expand **NPM Scripts** near the bottom. Under `frontend\package.json`, run `dev` for the frontend, `backend` for the API, or `dev:all` for both. These entries run in VS Code's integrated terminal; press `Ctrl+C` there to stop them.
 
 ### Backend
 
@@ -19,7 +27,7 @@ backend/.venv/Scripts/python -m pip install -r backend/requirements.txt
 backend/.venv/Scripts/python -m uvicorn app.main:app --app-dir backend --reload --port 8000
 ```
 
-Startup creates the tables and `./data/profile.db`. Set `DATABASE_URL` in a root `.env` file (copy `.env.example`) to configure the database. A standard `postgresql://...` URL is normalized to the included psycopg 3 driver; supply credentials via environment settings.
+Startup creates the tables, applies pending Alembic migrations, and uses `./data/profile.db` by default. Set `DATABASE_URL` in a root `.env` file (copy `.env.example`) to configure the database. A standard `postgresql://...` URL is normalized to the included psycopg 3 driver; supply credentials via environment settings.
 
 - Health: <http://localhost:8000/api/health>
 - Profile JSON: <http://localhost:8000/api/profile>
@@ -32,7 +40,7 @@ npm --prefix frontend install
 npm --prefix frontend run dev
 ```
 
-Visit <http://localhost:3000>. Configure `NEXT_PUBLIC_API_URL` in `frontend/.env.local` if the API is elsewhere. Select **View resume** to reveal the CV. No personal details are seeded or fabricated.
+Visit <http://localhost:3000>. Configure `NEXT_PUBLIC_API_URL` in `frontend/.env.local` if the API is elsewhere. Select **View resume** to reveal the CV. Open <http://localhost:3000/admin> to edit the profile shown on the homepage; save changes to publish them immediately. The profile is structured around professional experience, grouped technical skills, awards, and education. No personal details are seeded or fabricated.
 
 ## Database and migrations
 

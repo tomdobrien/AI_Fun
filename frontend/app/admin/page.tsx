@@ -1,0 +1,218 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { api } from "@/lib/api";
+import type { Award, Education, Experience, Profile, ProfileLink, SelectedWork, Skill } from "@/lib/types";
+
+const emptyProfile: Profile = {
+  displayName: null,
+  headline: null,
+  introduction: null,
+  location: null,
+  contactEmail: null,
+  contactPhone: null,
+  experience: [],
+  selectedWork: [],
+  skills: [],
+  links: [],
+  awards: [],
+  education: [],
+};
+
+type RepeatedSection = "experience" | "selectedWork" | "skills" | "links" | "awards" | "education";
+type EntryFor<S extends RepeatedSection> = Profile[S][number];
+
+const newExperience: Experience = {
+  employer: "", location: null, role: "", workMode: null, startDate: null, endDate: null, responsibilities: [], projects: [],
+};
+const newWork: SelectedWork = { title: "", summary: null, technologies: [], url: null };
+const newSkill: Skill = { name: "", category: null };
+const newLink: ProfileLink = { label: "", url: "" };
+const newAward: Award = { title: "", organization: null, date: null, description: null };
+const newEducation: Education = { institution: "", location: null, degree: "", fieldOfStudy: null, graduationDate: null };
+
+function splitLines(value: string): string[] {
+  return value.split("\n").map((line) => line.trim()).filter(Boolean);
+}
+
+export default function AdminPage() {
+  const [profile, setProfile] = useState<Profile>(emptyProfile);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    api.getProfile()
+      .then(setProfile)
+      .catch(() => setError("Could not load the profile. Check that the backend is running."))
+      .finally(() => setLoading(false));
+  }, []);
+
+  function updateEntry<S extends RepeatedSection>(section: S, index: number, patch: Partial<EntryFor<S>>) {
+    setProfile((current) => {
+      const entries = current[section] as EntryFor<S>[];
+      return {
+        ...current,
+        [section]: entries.map((entry, entryIndex) =>
+          entryIndex === index ? { ...entry, ...patch } : entry,
+        ),
+      };
+    });
+  }
+
+  function addEntry<S extends RepeatedSection>(section: S, entry: EntryFor<S>) {
+    setProfile((current) => ({
+      ...current,
+      [section]: [...(current[section] as EntryFor<S>[]), entry],
+    }));
+  }
+
+  function removeEntry<S extends RepeatedSection>(section: S, index: number) {
+    setProfile((current) => ({
+      ...current,
+      [section]: (current[section] as EntryFor<S>[]).filter((_, entryIndex) => entryIndex !== index),
+    }));
+  }
+
+  async function saveProfile(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    setNotice("");
+    try {
+      setProfile(await api.updateProfile(profile));
+      setNotice("Your profile has been saved. The homepage will show these changes now.");
+    } catch {
+      setError("Could not save your changes. Check that the backend is running and try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <main className="admin-shell">
+      <header className="admin-header">
+        <div>
+          <p className="eyebrow">Profile editor</p>
+          <h1>Manage your profile</h1>
+          <p className="admin-intro">Changes saved here appear on your homepage.</p>
+        </div>
+        <a className="admin-home-link" href="/">← View homepage</a>
+      </header>
+
+      {loading ? <p className="notice" role="status">Loading your profile…</p> : (
+        <form className="admin-form" onSubmit={saveProfile}>
+          {error && <p className="notice notice-error" role="alert">{error}</p>}
+          {notice && <p className="notice notice-success" role="status">{notice}</p>}
+
+          <section className="admin-card" aria-labelledby="intro-heading">
+            <div className="admin-section-heading"><div><p className="eyebrow">Resume header</p><h2 id="intro-heading">Introduction &amp; contact</h2></div></div>
+            <div className="admin-field-grid">
+              <label className="admin-field">Display name
+                <input maxLength={160} value={profile.displayName ?? ""} onChange={(e) => setProfile({ ...profile, displayName: e.target.value || null })} />
+              </label>
+              <label className="admin-field">Headline
+                <input maxLength={240} value={profile.headline ?? ""} onChange={(e) => setProfile({ ...profile, headline: e.target.value || null })} />
+              </label>
+              <label className="admin-field">City / region
+                <input maxLength={160} placeholder="City, State" value={profile.location ?? ""} onChange={(e) => setProfile({ ...profile, location: e.target.value || null })} />
+              </label>
+              <label className="admin-field">Email
+                <input type="email" maxLength={254} value={profile.contactEmail ?? ""} onChange={(e) => setProfile({ ...profile, contactEmail: e.target.value || null })} />
+              </label>
+              <label className="admin-field">Phone
+                <input type="tel" maxLength={80} value={profile.contactPhone ?? ""} onChange={(e) => setProfile({ ...profile, contactPhone: e.target.value || null })} />
+              </label>
+              <label className="admin-field admin-field-wide">Introduction
+                <textarea rows={4} value={profile.introduction ?? ""} onChange={(e) => setProfile({ ...profile, introduction: e.target.value || null })} />
+              </label>
+            </div>
+          </section>
+
+          <section className="admin-card" aria-labelledby="experience-heading">
+            <div className="admin-section-heading"><div><p className="eyebrow">Resume</p><h2 id="experience-heading">Experience</h2></div><button className="secondary-button" type="button" onClick={() => addEntry("experience", { ...newExperience })}>Add experience</button></div>
+            {profile.experience.length === 0 && <p className="admin-empty">No experience entries yet.</p>}
+            {profile.experience.map((item, index) => <fieldset className="admin-entry" key={`experience-${index}`}>
+              <legend>Position {index + 1}</legend><button className="remove-button" type="button" onClick={() => removeEntry("experience", index)}>Remove</button>
+              <div className="admin-field-grid">
+                <label className="admin-field">Role<input required value={item.role} onChange={(e) => updateEntry("experience", index, { role: e.target.value })} /></label>
+                <label className="admin-field">Employer<input required value={item.employer} onChange={(e) => updateEntry("experience", index, { employer: e.target.value })} /></label>
+                <label className="admin-field">City / region<input value={item.location ?? ""} onChange={(e) => updateEntry("experience", index, { location: e.target.value || null })} /></label>
+                <label className="admin-field">Work arrangement<input placeholder="On-site, hybrid, remote" value={item.workMode ?? ""} onChange={(e) => updateEntry("experience", index, { workMode: e.target.value || null })} /></label>
+                <label className="admin-field">Start date<input placeholder="2022" value={item.startDate ?? ""} onChange={(e) => updateEntry("experience", index, { startDate: e.target.value || null })} /></label>
+                <label className="admin-field">End date<input placeholder="Present" value={item.endDate ?? ""} onChange={(e) => updateEntry("experience", index, { endDate: e.target.value || null })} /></label>
+                <label className="admin-field admin-field-wide">Responsibilities <span className="field-hint">One per line</span><textarea rows={3} value={item.responsibilities.join("\n")} onChange={(e) => updateEntry("experience", index, { responsibilities: splitLines(e.target.value) })} /></label>
+                <label className="admin-field admin-field-wide">Projects &amp; impact <span className="field-hint">One outcome or project per line</span><textarea rows={4} value={item.projects.join("\n")} onChange={(e) => updateEntry("experience", index, { projects: splitLines(e.target.value) })} /></label>
+              </div>
+            </fieldset>)}
+          </section>
+
+          <section className="admin-card" aria-labelledby="work-heading">
+            <div className="admin-section-heading"><div><p className="eyebrow">Portfolio</p><h2 id="work-heading">Selected work</h2></div><button className="secondary-button" type="button" onClick={() => addEntry("selectedWork", { ...newWork })}>Add work</button></div>
+            {profile.selectedWork.length === 0 && <p className="admin-empty">No work entries yet.</p>}
+            {profile.selectedWork.map((item, index) => <fieldset className="admin-entry" key={`work-${index}`}>
+              <legend>Project {index + 1}</legend><button className="remove-button" type="button" onClick={() => removeEntry("selectedWork", index)}>Remove</button>
+              <div className="admin-field-grid">
+                <label className="admin-field">Title<input required value={item.title} onChange={(e) => updateEntry("selectedWork", index, { title: e.target.value })} /></label>
+                <label className="admin-field">Project URL<input type="url" placeholder="https://" value={item.url ?? ""} onChange={(e) => updateEntry("selectedWork", index, { url: e.target.value || null })} /></label>
+                <label className="admin-field admin-field-wide">Summary<textarea rows={3} value={item.summary ?? ""} onChange={(e) => updateEntry("selectedWork", index, { summary: e.target.value || null })} /></label>
+                <label className="admin-field admin-field-wide">Technologies <span className="field-hint">One per line</span><textarea rows={2} value={item.technologies.join("\n")} onChange={(e) => updateEntry("selectedWork", index, { technologies: splitLines(e.target.value) })} /></label>
+              </div>
+            </fieldset>)}
+          </section>
+
+          <section className="admin-card" aria-labelledby="skills-heading">
+            <div className="admin-section-heading"><div><p className="eyebrow">Expertise</p><h2 id="skills-heading">Skills</h2></div><button className="secondary-button" type="button" onClick={() => addEntry("skills", { ...newSkill })}>Add skill</button></div>
+            {profile.skills.length === 0 && <p className="admin-empty">No skills yet.</p>}
+            <p className="admin-empty">Skills are grouped by category on your resume. Reuse a category name such as “Languages &amp; Technologies” or “Tools” for each skill in that group.</p>
+            {profile.skills.map((item, index) => <fieldset className="admin-entry admin-entry-compact" key={`skill-${index}`}>
+              <legend>Skill {index + 1}</legend><button className="remove-button" type="button" onClick={() => removeEntry("skills", index)}>Remove</button>
+              <div className="admin-field-grid"><label className="admin-field">Name<input required value={item.name} onChange={(e) => updateEntry("skills", index, { name: e.target.value })} /></label><label className="admin-field">Category<input value={item.category ?? ""} onChange={(e) => updateEntry("skills", index, { category: e.target.value || null })} /></label></div>
+            </fieldset>)}
+          </section>
+
+          <section className="admin-card" aria-labelledby="awards-heading">
+            <div className="admin-section-heading"><div><p className="eyebrow">Recognition</p><h2 id="awards-heading">Awards</h2></div><button className="secondary-button" type="button" onClick={() => addEntry("awards", { ...newAward })}>Add award</button></div>
+            {profile.awards.length === 0 && <p className="admin-empty">No awards yet.</p>}
+            {profile.awards.map((item, index) => <fieldset className="admin-entry" key={`award-${index}`}>
+              <legend>Award {index + 1}</legend><button className="remove-button" type="button" onClick={() => removeEntry("awards", index)}>Remove</button>
+              <div className="admin-field-grid">
+                <label className="admin-field">Award / achievement<input required value={item.title} onChange={(e) => updateEntry("awards", index, { title: e.target.value })} /></label>
+                <label className="admin-field">Organization<input value={item.organization ?? ""} onChange={(e) => updateEntry("awards", index, { organization: e.target.value || null })} /></label>
+                <label className="admin-field">Date<input placeholder="2015" value={item.date ?? ""} onChange={(e) => updateEntry("awards", index, { date: e.target.value || null })} /></label>
+                <label className="admin-field admin-field-wide">Details<textarea rows={2} value={item.description ?? ""} onChange={(e) => updateEntry("awards", index, { description: e.target.value || null })} /></label>
+              </div>
+            </fieldset>)}
+          </section>
+
+          <section className="admin-card" aria-labelledby="education-heading">
+            <div className="admin-section-heading"><div><p className="eyebrow">Academic background</p><h2 id="education-heading">Education</h2></div><button className="secondary-button" type="button" onClick={() => addEntry("education", { ...newEducation })}>Add education</button></div>
+            {profile.education.length === 0 && <p className="admin-empty">No education entries yet.</p>}
+            {profile.education.map((item, index) => <fieldset className="admin-entry" key={`education-${index}`}>
+              <legend>Education {index + 1}</legend><button className="remove-button" type="button" onClick={() => removeEntry("education", index)}>Remove</button>
+              <div className="admin-field-grid">
+                <label className="admin-field">Institution<input required value={item.institution} onChange={(e) => updateEntry("education", index, { institution: e.target.value })} /></label>
+                <label className="admin-field">City / region<input value={item.location ?? ""} onChange={(e) => updateEntry("education", index, { location: e.target.value || null })} /></label>
+                <label className="admin-field">Degree<input required placeholder="B.S." value={item.degree} onChange={(e) => updateEntry("education", index, { degree: e.target.value })} /></label>
+                <label className="admin-field">Field of study<input value={item.fieldOfStudy ?? ""} onChange={(e) => updateEntry("education", index, { fieldOfStudy: e.target.value || null })} /></label>
+                <label className="admin-field">Graduation date<input placeholder="May 2013" value={item.graduationDate ?? ""} onChange={(e) => updateEntry("education", index, { graduationDate: e.target.value || null })} /></label>
+              </div>
+            </fieldset>)}
+          </section>
+
+          <section className="admin-card" aria-labelledby="links-heading">
+            <div className="admin-section-heading"><div><p className="eyebrow">Elsewhere</p><h2 id="links-heading">Contact &amp; links</h2></div><button className="secondary-button" type="button" onClick={() => addEntry("links", { ...newLink })}>Add link</button></div>
+            {profile.links.length === 0 && <p className="admin-empty">No links yet.</p>}
+            {profile.links.map((item, index) => <fieldset className="admin-entry admin-entry-compact" key={`link-${index}`}>
+              <legend>Link {index + 1}</legend><button className="remove-button" type="button" onClick={() => removeEntry("links", index)}>Remove</button>
+              <div className="admin-field-grid"><label className="admin-field">Label<input required value={item.label} onChange={(e) => updateEntry("links", index, { label: e.target.value })} /></label><label className="admin-field">URL<input required type="url" placeholder="https://" value={item.url} onChange={(e) => updateEntry("links", index, { url: e.target.value })} /></label></div>
+            </fieldset>)}
+          </section>
+
+          <div className="admin-savebar"><p>Remember to save when you’re done.</p><button className="primary-button" type="submit" disabled={saving}>{saving ? "Saving…" : "Save profile"}<span aria-hidden="true">✓</span></button></div>
+        </form>
+      )}
+    </main>
+  );
+}

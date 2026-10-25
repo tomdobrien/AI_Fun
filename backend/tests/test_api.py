@@ -11,4 +11,4 @@ def test_profile_endpoint_returns_structured_empty_profile() -> None:
     with TestClient(app) as client:
         response = client.get("/api/profile")
     assert response.status_code == 200
-    assert response.json() == {"displayName": None, "headline": None, "introduction": None, "experience": [], "selectedWork": [], "skills": [], "links": []}
+    assert response.json() == {"displayName": None, "headline": None, "introduction": None, "location": None, "contactEmail": None, "contactPhone": None, "experience": [], "selectedWork": [], "skills": [], "links": [], "awards": [], "education": []}
