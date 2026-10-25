@@ -1,11 +1,23 @@
 import hashlib
 import hmac
 import time
-from fastapi import HTTPException, Request, status
+from dataclasses import dataclass
+
+from fastapi import Depends, HTTPException, Request, status
+from sqlalchemy.orm import Session
+
 from app.config import settings
+from app.database import get_db
+from app.models.upload_user import UploadUser
 
 SESSION_COOKIE = "profile_admin_session"
 SESSION_MAX_AGE = 8 * 60 * 60
+
+
+@dataclass(frozen=True)
+class UploadAccess:
+    user_id: int | None
+    is_owner: bool
 
 
 def _session_secret() -> bytes:
@@ -27,6 +39,12 @@ def create_session() -> str:
     return f"{issued_at}.{signature}"
 
 
+def _bearer_or_cookie(request: Request) -> str | None:
+    authorization = request.headers.get("authorization", "")
+    bearer_token = authorization[7:].strip() if authorization.lower().startswith("bearer ") else None
+    return bearer_token or request.cookies.get(SESSION_COOKIE)
+
+
 def is_valid_session(value: str | None) -> bool:
     if not value:
         return False
@@ -46,11 +64,51 @@ def is_valid_session(value: str | None) -> bool:
 
 def require_admin(request: Request) -> None:
     ensure_auth_is_configured()
-    authorization = request.headers.get("authorization", "")
-    bearer_token = authorization[7:].strip() if authorization.lower().startswith("bearer ") else None
-    session_token = bearer_token or request.cookies.get(SESSION_COOKIE)
+    session_token = _bearer_or_cookie(request)
     if not is_valid_session(session_token):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Admin login required")
+
+
+def create_upload_session(user_id: int) -> str:
+    issued_at = str(int(time.time()))
+    message = f"upload:{user_id}:{issued_at}".encode("ascii")
+    signature = hmac.new(_session_secret(), message, hashlib.sha256).hexdigest()
+    return f"upload.{user_id}.{issued_at}.{signature}"
+
+
+def upload_session_user_id(value: str | None) -> int | None:
+    if not value:
+        return None
+    try:
+        role, user_id_text, issued_at, supplied_signature = value.split(".", 3)
+        if role != "upload" or not user_id_text.isascii() or not user_id_text.isdigit():
+            return None
+        if not issued_at.isascii() or not issued_at.isdigit() or not supplied_signature.isascii():
+            return None
+        user_id = int(user_id_text)
+        issued = int(issued_at)
+    except (ValueError, TypeError):
+        return None
+    now = int(time.time())
+    if issued > now + 60 or now - issued > SESSION_MAX_AGE:
+        return None
+    message = f"upload:{user_id}:{issued_at}".encode("ascii")
+    expected = hmac.new(_session_secret(), message, hashlib.sha256).hexdigest()
+    return user_id if hmac.compare_digest(expected, supplied_signature) else None
+
+
+def require_upload_access(request: Request, db: Session = Depends(get_db)) -> UploadAccess:
+    ensure_auth_is_configured()
+    token = _bearer_or_cookie(request)
+    if is_valid_session(token):
+        return UploadAccess(user_id=None, is_owner=True)
+    user_id = upload_session_user_id(token)
+    if user_id is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sign in to upload")
+    user = db.get(UploadUser, user_id)
+    if user is None or user.disabled_at is not None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Upload account is unavailable")
+    return UploadAccess(user_id=user.id, is_owner=False)
 
 
 def require_frontend_origin(request: Request) -> None:

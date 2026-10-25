@@ -200,3 +200,9 @@ body { transition:background-color 180ms ease,color 180ms ease; }
 .admin-login-card .admin-intro { margin:0 0 8px; }
 .admin-login-card .notice { margin:4px 0; }
 .admin-login-card .primary-button { justify-content:center; margin-top:5px; }
+.account-list { display:grid; gap:8px; margin:12px 0 24px; }
+.account-row { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:12px 14px; border:1px solid var(--border); border-radius:9px; }
+.account-row p { margin:3px 0 0; }
+.admin-card h3 { margin:24px 0 8px; font-size:16px; }
+.admin-card .admin-entry .secondary-button { margin-top:8px; }
+:root[data-theme="dark"] .account-row { border-color:#40535a; }

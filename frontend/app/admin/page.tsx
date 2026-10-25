@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
-import type { Award, Education, Experience, Profile, ProfileLink, SelectedWork, Skill } from "@/lib/types";
+import type { Award, Education, Experience, Profile, ProfileLink, SelectedWork, Skill, UploadInvitation, UploadUser } from "@/lib/types";
 import ThemeToggle from "../theme-toggle";
 
 const siteBasePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
@@ -54,7 +54,21 @@ export default function AdminPage() {
   const [photoProgress, setPhotoProgress] = useState("");
   const [photoNotice, setPhotoNotice] = useState("");
   const [photoError, setPhotoError] = useState("");
+  const [uploadUsers, setUploadUsers] = useState<UploadUser[]>([]);
+  const [uploadInvitations, setUploadInvitations] = useState<UploadInvitation[]>([]);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteName, setInviteName] = useState("");
+  const [inviteUrl, setInviteUrl] = useState("");
+  const [inviteBusy, setInviteBusy] = useState(false);
+  const [accountNotice, setAccountNotice] = useState("");
+  const [accountError, setAccountError] = useState("");
   const photoInputRef = useRef<HTMLInputElement>(null);
+
+  async function refreshUploadAccounts() {
+    const [users, invitations] = await Promise.all([api.listUploadUsers(), api.listUploadInvitations()]);
+    setUploadUsers(users);
+    setUploadInvitations(invitations);
+  }
 
   useEffect(() => {
     api.getAdminSession()
@@ -66,6 +80,11 @@ export default function AdminPage() {
         } catch {
           setAuthenticated(false);
           setAuthError("Could not load the profile. Check that the backend is running.");
+        }
+        try {
+          await refreshUploadAccounts();
+        } catch (cause) {
+          setAccountError(cause instanceof Error ? cause.message : "Could not load upload accounts.");
         }
       })
       .catch(() => setAuthError("Could not verify admin access. Check that the backend is running and authentication is configured."))
@@ -82,6 +101,7 @@ export default function AdminPage() {
       setLoginPassword("");
       setLoading(true);
       setProfile(await api.getProfile());
+      await refreshUploadAccounts();
     } catch (cause) {
       setAuthenticated(false);
       setAuthError(cause instanceof Error ? cause.message : "Admin login failed.");
@@ -174,13 +194,56 @@ export default function AdminPage() {
     setUploadingPhotos(false);
   }
 
+  async function inviteUploader(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setInviteBusy(true);
+    setAccountError("");
+    setAccountNotice("");
+    setInviteUrl("");
+    try {
+      const invitation = await api.createUploadInvitation(inviteEmail, inviteName);
+      setInviteUrl(`${window.location.origin}${siteBasePath}/invite/?token=${encodeURIComponent(invitation.token)}`);
+      setAccountNotice(`Invitation created for ${invitation.email}. Share the link below; it expires in 7 days and can be used once.`);
+      setInviteEmail("");
+      setInviteName("");
+      await refreshUploadAccounts();
+    } catch (cause) {
+      setAccountError(cause instanceof Error ? cause.message : "Could not create invitation.");
+    } finally {
+      setInviteBusy(false);
+    }
+  }
+
+  async function revokeInvitation(id: number) {
+    setAccountError("");
+    try {
+      await api.revokeUploadInvitation(id);
+      setAccountNotice("Invitation revoked.");
+      await refreshUploadAccounts();
+    } catch (cause) {
+      setAccountError(cause instanceof Error ? cause.message : "Could not revoke invitation.");
+    }
+  }
+
+  async function disableUploader(user: UploadUser) {
+    if (!window.confirm(`Disable uploads for ${user.email}? Their existing backup files will stay in place.`)) return;
+    setAccountError("");
+    try {
+      await api.disableUploadUser(user.id);
+      setAccountNotice(`Upload access for ${user.email} has been disabled.`);
+      await refreshUploadAccounts();
+    } catch (cause) {
+      setAccountError(cause instanceof Error ? cause.message : "Could not disable this account.");
+    }
+  }
+
   return (
     <main className="admin-shell">
       <header className="admin-header">
         <div>
           <p className="eyebrow">Profile editor</p>
           <h1>Manage your profile</h1>
-          <p className="admin-intro">Edit your profile or send photos and videos to private Pi storage.</p>
+          <p className="admin-intro">Edit your profile, manage upload invitations, or send media to private Pi storage.</p>
         </div>
         <div className="admin-header-actions">{authenticated && <button className="secondary-button" type="button" onClick={logout}>Log out</button>}<ThemeToggle /><a className="admin-home-link" href={`${siteBasePath}/`}>← View homepage</a></div>
       </header>
@@ -203,15 +266,36 @@ export default function AdminPage() {
           <p className="admin-intro">Choose photos or videos from this device. They’ll be copied to the photo folder on your Pi and won’t appear on the public homepage.</p>
           <form className="admin-upload-form" onSubmit={uploadPhotos}>
             <label className="admin-field">Photos and videos
-              <input ref={photoInputRef} type="file" accept="image/*,video/*" multiple disabled={uploadingPhotos} onChange={(event) => { setPhotoFiles(Array.from(event.target.files ?? [])); setPhotoNotice(""); setPhotoError(""); }} />
+              <input ref={photoInputRef} type="file" multiple disabled={uploadingPhotos} onChange={(event) => { setPhotoFiles(Array.from(event.target.files ?? [])); setPhotoNotice(""); setPhotoError(""); }} />
             </label>
-            <p className="field-hint">Up to 100 MB per file. Originals are copied; the phone keeps its files.</p>
+            <p className="field-hint">Any file type, up to 100 MB per file. Files are copied; originals stay on this device.</p>
             {photoFiles.length > 0 && <p className="admin-empty">{photoFiles.length} {photoFiles.length === 1 ? "file" : "files"} selected</p>}
             {photoProgress && <p className="notice" role="status">{photoProgress}</p>}
             {photoNotice && <p className="notice notice-success" role="status">{photoNotice}</p>}
             {photoError && <p className="notice notice-error" role="alert">{photoError}</p>}
             <button className="primary-button" type="submit" disabled={uploadingPhotos || photoFiles.length === 0}>{uploadingPhotos ? "Uploading…" : "Upload to Pi"}<span aria-hidden="true">↑</span></button>
           </form>
+        </section>
+        <section className="admin-card admin-upload-card" aria-labelledby="upload-accounts-heading">
+          <div className="admin-section-heading"><div><p className="eyebrow">Access control</p><h2 id="upload-accounts-heading">Upload users</h2></div></div>
+          <p className="admin-intro">Invite someone to upload to their own private subfolder. They cannot edit your profile or invite other users. Your uploads remain in the main backup folder.</p>
+          {accountError && <p className="notice notice-error" role="alert">{accountError}</p>}
+          {accountNotice && <p className="notice notice-success" role="status">{accountNotice}</p>}
+          <form className="admin-upload-form" onSubmit={inviteUploader}>
+            <div className="admin-field-grid">
+              <label className="admin-field">Invite email<input type="email" required maxLength={254} autoComplete="email" value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} /></label>
+              <label className="admin-field">Name (optional)<input maxLength={160} autoComplete="name" value={inviteName} onChange={(event) => setInviteName(event.target.value)} /></label>
+            </div>
+            <button className="primary-button" type="submit" disabled={inviteBusy}>{inviteBusy ? "Creating invite…" : "Create invite"}</button>
+          </form>
+          {inviteUrl && <div className="admin-entry"><p className="field-hint">This one-time link is shown only now. Copy it and send it to the invited person.</p><label className="admin-field">Invitation link<input readOnly value={inviteUrl} onFocus={(event) => event.currentTarget.select()} /></label><button className="secondary-button" type="button" onClick={() => void navigator.clipboard.writeText(inviteUrl)}>Copy link</button></div>}
+          <h3>Accounts</h3>
+          {uploadUsers.length === 0 ? <p className="admin-empty">No invited upload accounts yet.</p> : <div className="account-list">{uploadUsers.map((user) => <div className="account-row" key={user.id}><div><strong>{user.displayName || user.email}</strong><p className="field-hint">{user.email} · {user.active ? "Active" : "Disabled"}</p></div>{user.active && <button className="remove-button" type="button" onClick={() => void disableUploader(user)}>Disable</button>}</div>)}</div>}
+          <h3>Invitations</h3>
+          {uploadInvitations.length === 0 ? <p className="admin-empty">No invitations yet.</p> : <div className="account-list">{uploadInvitations.map((invitation) => {
+            const state = invitation.accepted ? "Accepted" : invitation.revoked ? "Revoked" : invitation.expired ? "Expired" : "Pending";
+            return <div className="account-row" key={invitation.id}><div><strong>{invitation.displayName || invitation.email}</strong><p className="field-hint">{invitation.email} · {state}</p></div>{state === "Pending" && <button className="remove-button" type="button" onClick={() => void revokeInvitation(invitation.id)}>Revoke</button>}</div>;
+          })}</div>}
         </section>
         <form className="admin-form" onSubmit={saveProfile}>
           {error && <p className="notice notice-error" role="alert">{error}</p>}

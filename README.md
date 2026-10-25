@@ -44,7 +44,9 @@ npm --prefix frontend run dev
 
 Visit <http://localhost:3000>. Configure `NEXT_PUBLIC_API_URL` in `frontend/.env.local` if the API is elsewhere. Select **View resume** to reveal the CV. Open <http://localhost:3000/admin> and sign in with `ADMIN_PASSWORD` to edit the profile shown on the homepage; save changes to publish them immediately. The profile is structured around professional experience, grouped technical skills, awards, and education. No personal details are seeded or fabricated.
 
-The authenticated `/admin` page also accepts photo and video uploads. Uploads are written to `PHOTO_UPLOAD_DIR` (default `./data/photos`), are limited to 100 MB per file and supported image/video extensions, and are not served publicly. Exact duplicate contents in that folder are skipped. Set `PHOTO_UPLOAD_MOUNT` to the mounted external-drive root in production; uploads return an unavailable error if that drive is not mounted.
+The authenticated `/admin` page also accepts files of any type. Uploads are written to `PHOTO_UPLOAD_DIR` (default `./data/photos`), are limited to 100 MB per file, and are not served publicly. Exact duplicate contents in the destination folder are skipped. Set `PHOTO_UPLOAD_MOUNT` to the mounted external-drive root in production; uploads return an unavailable error if that drive is not mounted.
+
+The owner can invite additional upload-only accounts from `/admin`. Invitations are single-use links that expire after seven days; copy and share the link yourself because no email delivery service is configured. The recipient sets a password and signs in at `/upload`. Each account writes only to its own `users/user-<id>` subfolder under `PHOTO_UPLOAD_DIR`; it cannot edit the profile, browse other folders, or invite more accounts. The owner can revoke pending invitations and disable upload accounts. Upload sessions expire after eight hours.
 
 ### GitHub Pages deployment
 
