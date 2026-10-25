@@ -266,6 +266,7 @@ def accept_upload_invitation(
             UploadInvitation.expires_at > now,
         )
         .values(accepted_at=now)
+        .execution_options(synchronize_session=False)
     )
     if claimed.rowcount != 1:
         db.rollback()
