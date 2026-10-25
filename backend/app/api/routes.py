@@ -4,11 +4,11 @@ import hashlib
 import hmac
 import re
 import secrets
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
+from datetime import timedelta, timezone
 from urllib.parse import unquote
 from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, SecretStr
 from sqlalchemy import select, text, update
 from sqlalchemy.orm import Session
@@ -31,6 +31,7 @@ from app.models.upload_user import UploadInvitation, UploadUser, utcnow
 from app.repositories.profile_repository import ProfileRepository
 from app.schemas import ProfileResponse, ProfileUpdate
 from app.services.profile_service import ProfileService
+from app.services.file_storage import download_path, list_files, original_filename, upload_directory
 
 router = APIRouter(prefix="/api")
 secure_cookie = settings.app_env.lower() not in {"development", "dev", "test"}
@@ -38,36 +39,6 @@ cookie_samesite = "none" if secure_cookie else "strict"
 MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 UPLOAD_LOCK = asyncio.Lock()
 
-
-def _photo_upload_directory(user_id: int | None = None) -> Path:
-    upload_dir = Path(settings.photo_upload_dir).expanduser()
-    if settings.photo_upload_mount:
-        mount = Path(settings.photo_upload_mount).expanduser()
-        try:
-            resolved_mount = mount.resolve(strict=True)
-            resolved_upload_dir = upload_dir.resolve(strict=True)
-        except OSError as exc:
-            raise HTTPException(status_code=503, detail="Photo storage is unavailable") from exc
-        if not mount.is_mount() or (resolved_upload_dir != resolved_mount and resolved_mount not in resolved_upload_dir.parents):
-            raise HTTPException(status_code=503, detail="Photo storage is unavailable")
-        if not resolved_upload_dir.is_dir():
-            raise HTTPException(status_code=503, detail="Photo storage is unavailable")
-        root = resolved_upload_dir
-    else:
-        upload_dir.mkdir(parents=True, exist_ok=True)
-        root = upload_dir.resolve()
-
-    if user_id is None:
-        return root
-    user_directory = root / "users" / f"user-{user_id}"
-    try:
-        user_directory.mkdir(parents=True, exist_ok=True)
-        resolved_user_directory = user_directory.resolve(strict=True)
-    except OSError as exc:
-        raise HTTPException(status_code=503, detail="Photo storage is unavailable") from exc
-    if root not in resolved_user_directory.parents or not resolved_user_directory.is_dir():
-        raise HTTPException(status_code=503, detail="Photo storage is unavailable")
-    return resolved_user_directory
 
 class AdminLoginRequest(BaseModel):
     password: SecretStr
@@ -357,19 +328,14 @@ def admin_logout(request: Request, response: Response) -> dict[str, str]:
 async def upload_admin_photo(
     request: Request,
     response: Response,
+    db: Session = Depends(get_db),
     access: UploadAccess = Depends(require_upload_access),
     _origin: None = Depends(require_frontend_origin),
-) -> dict[str, str | int]:
+) -> dict[str, str | int | bool]:
     filename = unquote(request.headers.get("x-file-name", "")).strip()
-    if (
-        not filename
-        or filename in {".", ".."}
-        or "/" in filename
-        or "\\" in filename
-        or "\x00" in filename
-        or any(ord(character) < 32 or ord(character) == 127 for character in filename)
-        or len(filename.encode("utf-8")) > 180
-    ):
+    if (not filename or filename in {".", ".."} or "/" in filename or "\\" in filename or "\x00" in filename
+            or any(ord(character) < 32 or ord(character) == 127 for character in filename)
+            or len(filename.encode("utf-8")) > 180):
         raise HTTPException(status_code=400, detail="A valid file name is required")
     content_length = request.headers.get("content-length")
     if content_length:
@@ -379,10 +345,9 @@ async def upload_admin_photo(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail="Invalid content length") from exc
 
-    directory = _photo_upload_directory(None if access.is_owner else access.user_id)
+    user = None if access.is_owner else db.get(UploadUser, access.user_id)
+    directory = upload_directory(user, create=True)
     upload_id = uuid4().hex
-    stored_name = f"{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}_{upload_id[:8]}_{filename}"
-    destination = directory / stored_name
     temporary = directory / f".{upload_id}.uploading"
     total_bytes = 0
     content_hash = hashlib.sha256()
@@ -398,12 +363,10 @@ async def upload_admin_photo(
             raise HTTPException(status_code=400, detail="The uploaded file is empty")
         digest = content_hash.hexdigest()
         async with UPLOAD_LOCK:
-            if any(directory.glob(f"{digest}_*")):
-                temporary.unlink(missing_ok=True)
-                response.headers["Cache-Control"] = "no-store"
-                return {"filename": filename, "bytes": total_bytes, "duplicate": True}
-            destination = directory / f"{digest}_{filename}"
-            temporary.replace(destination)
+            duplicate = any(path.is_file() and not path.is_symlink() for path in directory.glob(f"{digest}_*"))
+            if not duplicate:
+                destination = directory / f"{digest}_{filename}"
+                temporary.replace(destination)
     except HTTPException:
         temporary.unlink(missing_ok=True)
         raise
@@ -415,9 +378,48 @@ async def upload_admin_photo(
     except Exception:
         temporary.unlink(missing_ok=True)
         raise
+    finally:
+        temporary.unlink(missing_ok=True)
 
     response.headers["Cache-Control"] = "no-store"
-    return {"filename": filename, "bytes": total_bytes, "duplicate": False}
+    return {"filename": filename, "bytes": total_bytes, "duplicate": duplicate}
+
+
+def _storage_account(user_id: int | None, db: Session) -> UploadUser | None:
+    if user_id is None:
+        return None
+    user = db.get(UploadUser, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="Upload account not found")
+    return user
+
+
+@router.get("/admin/files", tags=["admin"])
+def admin_files(response: Response, user_id: int | None = None,
+                db: Session = Depends(get_db), _admin: None = Depends(require_admin)) -> dict:
+    response.headers["Cache-Control"] = "no-store"
+    return list_files(_storage_account(user_id, db), admin=True)
+
+
+@router.get("/upload/files", tags=["upload"])
+def uploader_files(response: Response, db: Session = Depends(get_db),
+                   access: UploadAccess = Depends(require_upload_access)) -> dict:
+    response.headers["Cache-Control"] = "no-store"
+    return list_files(_storage_account(access.user_id, db), admin=False)
+
+
+def _download(user: UploadUser | None, file_id: str) -> FileResponse:
+    path = download_path(user, file_id)
+    return FileResponse(path, filename=original_filename(file_id), media_type="application/octet-stream", headers={
+        "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "sandbox; default-src 'none'",
+    })
+
+
+@router.get("/admin/files/download", tags=["admin"])
+def admin_download(file_id: str, user_id: int | None = None, db: Session = Depends(get_db),
+                   _admin: None = Depends(require_admin)) -> FileResponse:
+    return _download(_storage_account(user_id, db), file_id)
 
 @router.get("/health", tags=["health"])
 def health(db: Session = Depends(get_db)) -> dict[str, str]:

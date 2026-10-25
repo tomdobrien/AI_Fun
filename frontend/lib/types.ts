@@ -8,3 +8,5 @@ export interface Profile { displayName: string | null; headline: string | null; 
 export interface UploadUser { id: number; email: string; displayName: string | null; createdAt: string; active: boolean; }
 export interface UploadInvitation { id: number; email: string; displayName: string | null; expiresAt: string; accepted: boolean; revoked: boolean; expired: boolean; }
 export interface UploadInviteDetails { email: string; displayName: string | null; expiresAt: string; }
+export interface StoredFile { id?: string; filename: string; bytes?: number; modifiedAt?: string; }
+export interface StoredFileList { accountName: string; email: string | null; files: StoredFile[]; }

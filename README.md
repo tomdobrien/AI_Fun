@@ -48,11 +48,15 @@ The authenticated `/admin` page also accepts files of any type. Uploads are writ
 
 The owner can invite additional upload-only accounts from `/admin`. Invitations are single-use links that expire after seven days; copy and share the link yourself because no email delivery service is configured. The recipient sets a password and signs in at `/upload`. Each account writes only to its own `users/user-<id>` subfolder under `PHOTO_UPLOAD_DIR`; it cannot edit the profile, browse other folders, or invite more accounts. The owner can revoke pending invitations and disable upload accounts. Upload sessions expire after eight hours.
 
+The upload page lists the signed-in account's original filenames, without exposing the generated storage prefix. Invited accounts can see filenames only; they cannot download file contents. In `/admin`, **Browse backup files** identifies accounts by name/email and lets the owner list and download their files. Stored filenames, content hashes, and folder identifiers remain unchanged, including for existing uploads. Downloads require an owner session and are served as attachments; files are never published as public assets.
+
 ### GitHub Pages deployment
 
 The workflow in `.github/workflows/pages.yml` builds the frontend as static files and deploys it to GitHub Pages whenever `main` changes. In the repository settings, set **Pages → Build and deployment → Source** to **GitHub Actions**. Add a repository variable named `NEXT_PUBLIC_API_URL` with `https://conradspi4.tailb5b410.ts.net` before deploying. The Pi API is published through Tailscale Funnel and allows the Pages site's origin through `FRONTEND_ORIGIN`.
 
 The frontend uses the Pages base path automatically, including when the repository is published at `https://<owner>.github.io/<repository>/`. The admin editor uses a signed bearer token rather than depending on cross-site cookies, so a custom domain is optional. The Pi service definition is in `deploy/profile-api.service`; it listens only on the Pi's loopback interface. Tailscale Funnel publishes it at `https://conradspi4.tailb5b410.ts.net`.
+
+When the Pi API is unavailable, every route shows a **Preview only** homepage. Navigation, contact links, the hidden admin link, and the theme button are visibly disabled; disabled links have no destination. The first availability check times out after five seconds. Visible pages retry every 30 seconds and when the tab regains focus or the browser reconnects. Normal pages and controls return automatically when the API responds. The preview uses the last public profile loaded in the current page session, or the built-in homepage copy for a first visit while offline. No login or account data is cached for preview mode.
 
 ## Database and migrations
 

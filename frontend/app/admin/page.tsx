@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import type { Award, Education, Experience, Profile, ProfileLink, SelectedWork, Skill, UploadInvitation, UploadUser } from "@/lib/types";
 import ThemeToggle from "../theme-toggle";
+import FileBrowser from "../file-browser";
 
 const siteBasePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
@@ -62,6 +63,8 @@ export default function AdminPage() {
   const [inviteBusy, setInviteBusy] = useState(false);
   const [accountNotice, setAccountNotice] = useState("");
   const [accountError, setAccountError] = useState("");
+  const [fileAccount, setFileAccount] = useState<number | undefined>(undefined);
+  const [fileRevision, setFileRevision] = useState(0);
   const photoInputRef = useRef<HTMLInputElement>(null);
 
   async function refreshUploadAccounts() {
@@ -182,6 +185,7 @@ export default function AdminPage() {
         if (photoInputRef.current) photoInputRef.current.value = "";
         setPhotoProgress("");
         setUploadingPhotos(false);
+        setFileRevision((value) => value + 1);
         return;
       }
     }
@@ -192,6 +196,7 @@ export default function AdminPage() {
     setPhotoFiles([]);
     if (photoInputRef.current) photoInputRef.current.value = "";
     setUploadingPhotos(false);
+    setFileRevision((value) => value + 1);
   }
 
   async function inviteUploader(event: React.FormEvent<HTMLFormElement>) {
@@ -296,6 +301,16 @@ export default function AdminPage() {
             const state = invitation.accepted ? "Accepted" : invitation.revoked ? "Revoked" : invitation.expired ? "Expired" : "Pending";
             return <div className="account-row" key={invitation.id}><div><strong>{invitation.displayName || invitation.email}</strong><p className="field-hint">{invitation.email} · {state}</p></div>{state === "Pending" && <button className="remove-button" type="button" onClick={() => void revokeInvitation(invitation.id)}>Revoke</button>}</div>;
           })}</div>}
+        </section>
+        <section className="admin-card admin-upload-card" aria-labelledby="backup-files-heading">
+          <div className="admin-section-heading"><div><p className="eyebrow">Private storage</p><h2 id="backup-files-heading">Browse backup files</h2></div></div>
+          <label className="admin-field">Account
+            <select value={fileAccount ?? "owner"} onChange={(event) => setFileAccount(event.target.value === "owner" ? undefined : Number(event.target.value))}>
+              <option value="owner">My files (site owner)</option>
+              {uploadUsers.map((user) => <option key={user.id} value={user.id}>{user.displayName ? `${user.displayName} (${user.email})` : user.email}{user.active ? "" : " - disabled"}</option>)}
+            </select>
+          </label>
+          <FileBrowser key={fileAccount ?? "owner"} admin userId={fileAccount} title="Uploaded files" revision={fileRevision} />
         </section>
         <form className="admin-form" onSubmit={saveProfile}>
           {error && <p className="notice notice-error" role="alert">{error}</p>}

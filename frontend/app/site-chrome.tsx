@@ -3,6 +3,8 @@
 import type { ReactNode } from "react";
 import ThemeToggle from "./theme-toggle";
 import { usePublicProfile } from "./profile-context";
+import SiteLink from "./site-link";
+import ServerNotice from "./server-notice";
 
 const siteBasePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
@@ -21,19 +23,20 @@ export default function SiteChrome({ children, active }: Readonly<{ children: Re
 
   return <div className="personal-site">
     <header className="site-header">
-      <a className="site-wordmark" href={`${siteBasePath}/`} aria-label={`${ownerName}, home`}>
+      <SiteLink className="site-wordmark" href={`${siteBasePath}/`} aria-label={`${ownerName}, home`}>
         <span className="site-monogram" aria-hidden="true">{initials || "T"}</span>
-        <span>{ownerName}</span>
-      </a>
+        <span className="site-wordmark-copy"><span>{ownerName}</span><span className="site-wordmark-note">Personal website</span></span>
+      </SiteLink>
       <nav className="site-navigation" aria-label="Main navigation">
-        {destinations.map((item) => <a key={item.id} href={item.href} aria-current={active === item.id ? "page" : undefined}>{item.label}</a>)}
+        {destinations.map((item) => <SiteLink key={item.id} href={item.href} aria-current={active === item.id ? "page" : undefined}>{item.label}</SiteLink>)}
       </nav>
       <ThemeToggle />
     </header>
+    <ServerNotice />
     {children}
     <footer className="site-footer">
-      <span className="site-footer-note">A personal site, in progress.</span>
-      <a className="owner-corner-link" href={`${siteBasePath}/admin/`} aria-label="Owner sign in">{ownerName}</a>
+      <span className="site-footer-note">Work, projects, and useful things.</span>
+      <SiteLink className="owner-corner-link" href={`${siteBasePath}/admin/`} aria-label="Owner sign in">{ownerName}</SiteLink>
     </footer>
   </div>;
 }

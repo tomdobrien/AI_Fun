@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import SiteChrome from "../site-chrome";
+import FileBrowser from "../file-browser";
 
 export default function UploadPage() {
   const [user, setUser] = useState<{ email: string; displayName: string | null } | null>(null);
@@ -14,6 +15,7 @@ export default function UploadPage() {
   const [progress, setProgress] = useState("");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const [fileRevision, setFileRevision] = useState(0);
   const input = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -26,8 +28,7 @@ export default function UploadPage() {
     setBusy(true);
     setError("");
     try {
-      await api.loginUploadUser(email, password);
-      setUser({ email: email.trim().toLowerCase(), displayName: null });
+      setUser(await api.loginUploadUser(email, password));
       setPassword("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Sign in failed.");
@@ -55,6 +56,7 @@ export default function UploadPage() {
         setFiles(files.slice(index));
         setProgress("");
         setBusy(false);
+        setFileRevision((value) => value + 1);
         return;
       }
     }
@@ -63,6 +65,7 @@ export default function UploadPage() {
     setFiles([]);
     if (input.current) input.current.value = "";
     setBusy(false);
+    setFileRevision((value) => value + 1);
   }
 
   function logout() {
@@ -78,7 +81,7 @@ export default function UploadPage() {
         <div><p className="home-kicker">02 / Private storage</p><h1>File backup</h1><p>Send files to your own private folder on the Pi.</p></div>
         {user && <button className="secondary-button" type="button" onClick={logout}>Log out</button>}
       </div>
-      {checking ? <p className="notice" role="status">Checking upload access…</p> : user ? <section className="admin-card admin-upload-card">
+      {checking ? <p className="notice" role="status">Checking upload access…</p> : user ? <><section className="admin-card admin-upload-card">
         <p className="eyebrow">Signed in as</p><h2>{user.displayName || user.email}</h2>
         <p className="admin-intro">Uploads go to your own folder and are private. Any file type is accepted, up to 100 MB per file. Exact duplicates are skipped.</p>
         <form className="admin-upload-form" onSubmit={upload}>
@@ -89,7 +92,7 @@ export default function UploadPage() {
           {error && <p className="notice notice-error" role="alert">{error}</p>}
           <button className="primary-button" type="submit" disabled={busy || !files.length}>{busy ? "Uploading…" : "Upload to my folder"}</button>
         </form>
-      </section> : <form className="admin-login-card" onSubmit={login}>
+      </section><section className="admin-card"><FileBrowser revision={fileRevision} /></section></> : <form className="admin-login-card" onSubmit={login}>
         <p className="eyebrow">Invited uploader</p><h2>Sign in</h2>
         <p className="admin-intro">Upload access is provided by the site owner. This account cannot edit the resume or invite people.</p>
         {error && <p className="notice notice-error" role="alert">{error}</p>}

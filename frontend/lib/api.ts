@@ -1,4 +1,4 @@
-import type { Profile, UploadInvitation, UploadInviteDetails, UploadUser } from "./types";
+import type { Profile, StoredFileList, UploadInvitation, UploadInviteDetails, UploadUser } from "./types";
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ||
   (process.env.NODE_ENV === "development" ? "http://localhost:8001" : "");
 let adminSessionToken: string | null = null;
@@ -17,8 +17,8 @@ async function errorMessage(response: Response, fallback: string): Promise<strin
 }
 
 export const api = {
-  async getProfile(): Promise<Profile> {
-    const response = await fetch(`${apiBaseUrl}/api/profile`, { cache: "no-store" });
+  async getProfile(signal?: AbortSignal): Promise<Profile> {
+    const response = await fetch(`${apiBaseUrl}/api/profile`, { cache: "no-store", signal });
     if (!response.ok) throw new Error(`Profile API returned ${response.status}`);
     return response.json() as Promise<Profile>;
   },
@@ -87,6 +87,31 @@ export const api = {
     if (!response.ok) throw new Error(await errorMessage(response, "Could not load upload accounts."));
     return response.json() as Promise<UploadUser[]>;
   },
+  async listStoredFiles(admin: boolean, userId?: number): Promise<StoredFileList> {
+    const query = userId !== undefined ? `?user_id=${userId}` : "";
+    const response = await fetch(`${apiBaseUrl}/api/${admin ? "admin" : "upload"}/files${query}`, {
+      cache: "no-store", credentials: "omit", headers: adminAuthorization(),
+    });
+    if (!response.ok) throw new Error(await errorMessage(response, "Could not load files."));
+    return response.json() as Promise<StoredFileList>;
+  },
+  async downloadStoredFile(fileId: string, filename: string, userId?: number): Promise<void> {
+    const query = new URLSearchParams({ file_id: fileId });
+    if (userId !== undefined) query.set("user_id", String(userId));
+    const response = await fetch(`${apiBaseUrl}/api/admin/files/download?${query}`, {
+      cache: "no-store", credentials: "omit", headers: adminAuthorization(),
+    });
+    if (!response.ok) throw new Error(await errorMessage(response, "Could not download this file."));
+    // Download as an attachment; uploaded HTML/SVG must never execute on the site.
+    const url = URL.createObjectURL(new Blob([await response.arrayBuffer()], { type: "application/octet-stream" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  },
   async listUploadInvitations(): Promise<UploadInvitation[]> {
     const response = await fetch(`${apiBaseUrl}/api/admin/invitations`, { cache: "no-store", headers: adminAuthorization() });
     if (!response.ok) throw new Error(await errorMessage(response, "Could not load invitations."));
@@ -122,15 +147,15 @@ export const api = {
     });
     if (!response.ok) throw new Error(await errorMessage(response, "Could not accept this invitation."));
   },
-  async loginUploadUser(email: string, password: string): Promise<string> {
+  async loginUploadUser(email: string, password: string): Promise<{ email: string; displayName: string | null }> {
     const response = await fetch(`${apiBaseUrl}/api/upload/login`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }),
     });
     if (!response.ok) throw new Error(await errorMessage(response, "Upload sign in failed."));
-    const result = await response.json() as { token?: string };
+    const result = await response.json() as { token?: string; email: string; displayName: string | null };
     if (!result.token) throw new Error("Upload sign in did not return a session token.");
     adminSessionToken = result.token;
-    return result.token;
+    return { email: result.email, displayName: result.displayName };
   },
   async getUploadSession(): Promise<{ email: string; displayName: string | null } | null> {
     if (!adminSessionToken) return null;
