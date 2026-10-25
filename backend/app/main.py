@@ -18,5 +18,5 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     yield
 
 app = FastAPI(title="Personal Profile API", version="0.1.0", lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=settings.allowed_frontend_origins, allow_credentials=True, allow_methods=["GET", "POST", "PUT"], allow_headers=["*"])
+app.add_middleware(CORSMiddleware, allow_origins=settings.allowed_frontend_origins, allow_credentials=True, allow_methods=["GET", "HEAD", "POST", "PUT"], allow_headers=["*"])
 app.include_router(router)

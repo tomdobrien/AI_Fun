@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import type { StoredFile, StoredFileList } from "@/lib/types";
+import MediaPreview, { MediaThumbnail } from "./media-preview";
+import { usePublicProfile } from "./profile-context";
 
 function sizeLabel(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -20,6 +22,14 @@ export default function FileBrowser({ admin = false, userId, title = "Your files
   const [page, setPage] = useState(0);
   const [refresh, setRefresh] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [selected, setSelected] = useState<StoredFile | null>(null);
+  const { status } = usePublicProfile();
+  const closePreview = useCallback(() => setSelected(null), []);
+
+  useEffect(() => {
+    // Native modal dialogs escape ancestor inertness; close them explicitly during an outage.
+    if (status !== "online") setSelected(null);
+  }, [status]);
 
   useEffect(() => {
     let active = true;
@@ -54,13 +64,20 @@ export default function FileBrowser({ admin = false, userId, title = "Your files
       {listing.files.length > 0 ? <>
         <label className="admin-field file-search">Find a file<input type="search" value={search} onChange={(event) => { setSearch(event.target.value); setPage(0); }} placeholder="Search filenames" /></label>
         <ul className="stored-file-list">{matches.slice(page * 50, (page + 1) * 50).map((file, index) => <li key={file.id ?? `${file.filename}-${index}`}>
-          <div><strong>{file.filename}</strong>{admin && file.bytes !== undefined && file.modifiedAt && <p>{sizeLabel(file.bytes)} / {new Date(file.modifiedAt).toLocaleString()}</p>}</div>
-          {admin && file.id && <button className="secondary-button" type="button" disabled={busy} aria-label={`Download ${file.filename}`} onClick={() => void download(file)}>Download</button>}
+          <div className="stored-file-main">
+            {file.id && file.mediaType && <MediaThumbnail file={file} userId={userId} onView={() => setSelected(file)} />}
+            <div><strong>{file.filename}</strong>{admin && file.bytes !== undefined && file.modifiedAt && <p>{sizeLabel(file.bytes)} / {new Date(file.modifiedAt).toLocaleString()}</p>}</div>
+          </div>
+          <div className="stored-file-actions">
+            {file.id && file.mediaType && <button className="secondary-button" type="button" aria-label={`View ${file.filename}`} onClick={() => setSelected(file)}>View</button>}
+            {admin && file.id && <button className="secondary-button" type="button" disabled={busy} aria-label={`Download ${file.filename}`} onClick={() => void download(file)}>Download</button>}
+          </div>
         </li>)}</ul>
         {!matches.length && <p className="admin-empty">No matching files.</p>}
         {pageCount > 1 && <div className="file-pagination"><button className="secondary-button" type="button" disabled={page === 0} onClick={() => setPage((value) => value - 1)}>Previous</button><span>Page {page + 1} of {pageCount}</span><button className="secondary-button" type="button" disabled={page + 1 >= pageCount} onClick={() => setPage((value) => value + 1)}>Next</button></div>}
       </> : <p className="admin-empty">No files uploaded yet.</p>}
     </>}
     {busy && <p className="field-hint" role="status">Working...</p>}
+    {selected && <MediaPreview file={selected} userId={userId} onClose={closePreview} />}
   </section>;
 }

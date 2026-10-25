@@ -7,7 +7,7 @@ import secrets
 from datetime import timedelta, timezone
 from urllib.parse import unquote
 from uuid import uuid4
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, SecretStr
 from sqlalchemy import select, text, update
@@ -32,6 +32,7 @@ from app.repositories.profile_repository import ProfileRepository
 from app.schemas import ProfileResponse, ProfileUpdate
 from app.services.profile_service import ProfileService
 from app.services.file_storage import download_path, list_files, original_filename, upload_directory
+from app.services.media_preview import image_preview, issue_video_ticket, media_type, verify_video_ticket
 
 router = APIRouter(prefix="/api")
 secure_cookie = settings.app_env.lower() not in {"development", "dev", "test"}
@@ -47,6 +48,11 @@ class AdminLoginRequest(BaseModel):
 class UploadLoginRequest(BaseModel):
     email: str
     password: SecretStr
+
+
+class VideoPreviewRequest(BaseModel):
+    file_id: str = Field(min_length=1, max_length=255)
+    user_id: int | None = Field(default=None, gt=0)
 
 
 class InvitationCreateRequest(BaseModel):
@@ -420,6 +426,63 @@ def _download(user: UploadUser | None, file_id: str) -> FileResponse:
 def admin_download(file_id: str, user_id: int | None = None, db: Session = Depends(get_db),
                    _admin: None = Depends(require_admin)) -> FileResponse:
     return _download(_storage_account(user_id, db), file_id)
+
+
+def _preview_account(access: UploadAccess, db: Session, user_id: int | None) -> UploadUser | None:
+    if access.is_owner:
+        return _storage_account(user_id, db)
+    if user_id is not None and user_id != access.user_id:
+        raise HTTPException(status_code=403, detail="You can only view your own media")
+    return _storage_account(access.user_id, db)
+
+
+def _preview_headers() -> dict[str, str]:
+    return {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "sandbox; default-src 'none'",
+            "Referrer-Policy": "no-referrer", "X-Robots-Tag": "noindex, noarchive"}
+
+
+@router.get("/files/image", tags=["media"])
+def preview_image(file_id: str, thumbnail: bool = False, user_id: int | None = None,
+                  db: Session = Depends(get_db), access: UploadAccess = Depends(require_upload_access)) -> FileResponse:
+    user = _preview_account(access, db, user_id)
+    path = image_preview(download_path(user, file_id), thumbnail=thumbnail)
+    return FileResponse(path, media_type="image/webp", headers=_preview_headers(),
+                        filename="preview.webp", content_disposition_type="inline")
+
+
+@router.post("/files/video-ticket", tags=["media"])
+def video_preview_ticket(data: VideoPreviewRequest, request: Request, response: Response,
+                         db: Session = Depends(get_db), access: UploadAccess = Depends(require_upload_access),
+                         _origin: None = Depends(require_frontend_origin)) -> dict:
+    user = _preview_account(access, db, data.user_id)
+    path = download_path(user, data.file_id)
+    media = media_type(path)
+    if not media or media[0] != "video":
+        raise HTTPException(status_code=415, detail="Video playback is not available for this file")
+    authorization = request.headers.get("authorization", "")
+    session = (authorization[7:].strip() if authorization.lower().startswith("bearer ") else "") or request.cookies.get(SESSION_COOKIE, "")
+    session_expires = int(session.split(".")[-2]) + SESSION_MAX_AGE
+    ticket, expires = issue_video_ticket(data.file_id, user.id if user else None, access.user_id, session_expires)
+    response.headers["Cache-Control"] = "no-store"
+    return {"ticket": ticket, "expiresAt": expires}
+
+
+@router.api_route("/files/video", methods=["GET", "HEAD"], tags=["media"])
+def preview_video(request: Request, ticket: str = Query(max_length=2048), db: Session = Depends(get_db)) -> FileResponse:
+    # Keep limited playback capabilities out of Uvicorn's request logs.
+    request.scope["query_string"] = b"ticket=redacted"
+    scope = verify_video_ticket(ticket)
+    if scope["viewer"] is not None:
+        viewer = db.get(UploadUser, scope["viewer"])
+        if viewer is None or viewer.disabled_at is not None:
+            raise HTTPException(status_code=401, detail="Upload account is unavailable")
+    path = download_path(_storage_account(scope["target"], db), scope["file"])
+    media = media_type(path)
+    if not media or media[0] != "video":
+        raise HTTPException(status_code=415, detail="Video playback is not available for this file")
+    return FileResponse(path, media_type=media[1], headers=_preview_headers(),
+                        filename="preview" + path.suffix.lower(), content_disposition_type="inline")
 
 @router.get("/health", tags=["health"])
 def health(db: Session = Depends(get_db)) -> dict[str, str]:

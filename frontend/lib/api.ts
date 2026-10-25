@@ -112,6 +112,25 @@ export const api = {
     link.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
   },
+  async getImagePreview(fileId: string, userId?: number, thumbnail = false, signal?: AbortSignal): Promise<Blob> {
+    const query = new URLSearchParams({ file_id: fileId, thumbnail: String(thumbnail) });
+    if (userId !== undefined) query.set("user_id", String(userId));
+    const response = await fetch(`${apiBaseUrl}/api/files/image?${query}`, {
+      cache: "no-store", credentials: "omit", headers: adminAuthorization(), signal,
+    });
+    if (!response.ok) throw new Error(await errorMessage(response, "Could not load this image preview."));
+    return response.blob();
+  },
+  async getVideoPreview(fileId: string, userId?: number, signal?: AbortSignal): Promise<{ url: string; expiresAt: number }> {
+    const response = await fetch(`${apiBaseUrl}/api/files/video-ticket`, {
+      method: "POST", cache: "no-store", credentials: "omit", signal,
+      headers: { "Content-Type": "application/json", ...adminAuthorization() },
+      body: JSON.stringify({ file_id: fileId, user_id: userId ?? null }),
+    });
+    if (!response.ok) throw new Error(await errorMessage(response, "Could not start video playback."));
+    const result = await response.json() as { ticket: string; expiresAt: number };
+    return { url: `${apiBaseUrl}/api/files/video?${new URLSearchParams({ ticket: result.ticket })}`, expiresAt: result.expiresAt };
+  },
   async listUploadInvitations(): Promise<UploadInvitation[]> {
     const response = await fetch(`${apiBaseUrl}/api/admin/invitations`, { cache: "no-store", headers: adminAuthorization() });
     if (!response.ok) throw new Error(await errorMessage(response, "Could not load invitations."));

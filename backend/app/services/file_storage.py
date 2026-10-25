@@ -8,6 +8,7 @@ from fastapi import HTTPException
 
 from app.config import settings
 from app.models.upload_user import UploadUser
+from app.services.media_preview import media_type
 
 GENERATED_PREFIX = re.compile(r"^(?:[a-f0-9]{64}_|\d{8}T\d{6}Z_[a-f0-9]{8}_)(.+)$")
 
@@ -58,6 +59,9 @@ def list_files(user: UploadUser | None, *, admin: bool) -> dict:
                 if path.name.startswith(".") or path.is_symlink() or not path.is_file():
                     continue
                 record = {"filename": original_filename(path.name)}
+                media = media_type(path)
+                if media:
+                    record.update({"id": path.name, "mediaType": media[0]})
                 if admin:
                     stat = path.stat()
                     record.update({"id": path.name, "bytes": stat.st_size,
