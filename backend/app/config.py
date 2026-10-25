@@ -4,6 +4,8 @@ class Settings(BaseSettings):
     app_env: str = "development"
     database_url: str = "sqlite:///./data/profile.db"
     frontend_origin: str = "http://localhost:3000"
+    admin_password: str | None = None
+    admin_session_secret: str | None = None
     model_config = SettingsConfigDict(env_file=(".env", "backend/.env"), extra="ignore")
 
     @property
@@ -12,5 +14,9 @@ class Settings(BaseSettings):
         if self.database_url.startswith("postgresql://"):
             return self.database_url.replace("postgresql://", "postgresql+psycopg://", 1)
         return self.database_url
+
+    @property
+    def allowed_frontend_origins(self) -> list[str]:
+        return [origin.strip().rstrip("/") for origin in self.frontend_origin.split(",") if origin.strip()]
 
 settings = Settings()

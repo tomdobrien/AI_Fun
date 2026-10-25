@@ -24,14 +24,16 @@ In VS Code, open **Explorer** in the left sidebar, then expand **NPM Scripts** n
 ```powershell
 python -m venv backend/.venv
 backend/.venv/Scripts/python -m pip install -r backend/requirements.txt
-backend/.venv/Scripts/python -m uvicorn app.main:app --app-dir backend --reload --port 8000
+backend/.venv/Scripts/python -m uvicorn app.main:app --app-dir backend --reload --port 8001
 ```
 
 Startup creates the tables, applies pending Alembic migrations, and uses `./data/profile.db` by default. Set `DATABASE_URL` in a root `.env` file (copy `.env.example`) to configure the database. A standard `postgresql://...` URL is normalized to the included psycopg 3 driver; supply credentials via environment settings.
 
-- Health: <http://localhost:8000/api/health>
-- Profile JSON: <http://localhost:8000/api/profile>
-- OpenAPI docs: <http://localhost:8000/docs>
+The `/admin` editor requires `ADMIN_PASSWORD` (at least 8 characters) and `ADMIN_SESSION_SECRET` (at least 32 random characters) in the root `.env` file. Generate values with `python -c "import secrets; print('ADMIN_PASSWORD=' + secrets.token_urlsafe(24)); print('ADMIN_SESSION_SECRET=' + secrets.token_urlsafe(48))"`, then paste both lines into `.env`. The password is never stored in the database. Successful sign-ins receive a signed token that expires after 8 hours; the frontend keeps it in memory, so you sign in again after a full page reload. On a production deployment, set `APP_ENV=production`, use HTTPS, and set `FRONTEND_ORIGIN` to the allowed frontend origin(s), comma-separated when needed.
+
+- Health: <http://localhost:8001/api/health>
+- Profile JSON: <http://localhost:8001/api/profile>
+- OpenAPI docs: <http://localhost:8001/docs>
 
 ### Frontend
 
@@ -40,7 +42,13 @@ npm --prefix frontend install
 npm --prefix frontend run dev
 ```
 
-Visit <http://localhost:3000>. Configure `NEXT_PUBLIC_API_URL` in `frontend/.env.local` if the API is elsewhere. Select **View resume** to reveal the CV. Open <http://localhost:3000/admin> to edit the profile shown on the homepage; save changes to publish them immediately. The profile is structured around professional experience, grouped technical skills, awards, and education. No personal details are seeded or fabricated.
+Visit <http://localhost:3000>. Configure `NEXT_PUBLIC_API_URL` in `frontend/.env.local` if the API is elsewhere. Select **View resume** to reveal the CV. Open <http://localhost:3000/admin> and sign in with `ADMIN_PASSWORD` to edit the profile shown on the homepage; save changes to publish them immediately. The profile is structured around professional experience, grouped technical skills, awards, and education. No personal details are seeded or fabricated.
+
+### GitHub Pages deployment
+
+The workflow in `.github/workflows/pages.yml` builds the frontend as static files and deploys it to GitHub Pages whenever `main` changes. In the repository settings, set **Pages → Build and deployment → Source** to **GitHub Actions**. Add a repository variable named `NEXT_PUBLIC_API_URL` with `https://conradspi4.tailb5b410.ts.net` before deploying. The Pi API is published through Tailscale Funnel and allows the Pages site's origin through `FRONTEND_ORIGIN`.
+
+The frontend uses the Pages base path automatically, including when the repository is published at `https://<owner>.github.io/<repository>/`. The admin editor uses a signed bearer token rather than depending on cross-site cookies, so a custom domain is optional. The Pi service definition is in `deploy/profile-api.service`; it listens only on the Pi's loopback interface. Tailscale Funnel publishes it at `https://conradspi4.tailb5b410.ts.net`.
 
 ## Database and migrations
 

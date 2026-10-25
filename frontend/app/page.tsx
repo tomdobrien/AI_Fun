@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import type { Profile } from "@/lib/types";
+import ThemeToggle from "./theme-toggle";
 
 const emptyProfile: Profile = {
   displayName: null,
@@ -46,6 +47,7 @@ export default function Home() {
           {profile.location && <span>{profile.location}</span>}
           {profile.contactEmail && <a href={`mailto:${profile.contactEmail}`}>{profile.contactEmail}</a>}
           {profile.contactPhone && <a href={`tel:${profile.contactPhone}`}>{profile.contactPhone}</a>}
+          <ThemeToggle />
         </div>
       </header>
 

@@ -3,6 +3,9 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import type { Award, Education, Experience, Profile, ProfileLink, SelectedWork, Skill } from "@/lib/types";
+import ThemeToggle from "../theme-toggle";
+
+const siteBasePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
 const emptyProfile: Profile = {
   displayName: null,
@@ -38,16 +41,59 @@ function splitLines(value: string): string[] {
 export default function AdminPage() {
   const [profile, setProfile] = useState<Profile>(emptyProfile);
   const [loading, setLoading] = useState(true);
+  const [authChecking, setAuthChecking] = useState(true);
+  const [authenticated, setAuthenticated] = useState(false);
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loggingIn, setLoggingIn] = useState(false);
+  const [authError, setAuthError] = useState("");
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
-    api.getProfile()
-      .then(setProfile)
-      .catch(() => setError("Could not load the profile. Check that the backend is running."))
-      .finally(() => setLoading(false));
+    api.getAdminSession()
+      .then(async (isAuthenticated) => {
+        if (!isAuthenticated) return;
+        setAuthenticated(true);
+        try {
+          setProfile(await api.getProfile());
+        } catch {
+          setAuthenticated(false);
+          setAuthError("Could not load the profile. Check that the backend is running.");
+        }
+      })
+      .catch(() => setAuthError("Could not verify admin access. Check that the backend is running and authentication is configured."))
+      .finally(() => { setAuthChecking(false); setLoading(false); });
   }, []);
+
+  async function login(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setLoggingIn(true);
+    setAuthError("");
+    try {
+      await api.loginAdmin(loginPassword);
+      setAuthenticated(true);
+      setLoginPassword("");
+      setLoading(true);
+      setProfile(await api.getProfile());
+    } catch (cause) {
+      setAuthenticated(false);
+      setAuthError(cause instanceof Error ? cause.message : "Admin login failed.");
+    } finally {
+      setLoggingIn(false);
+      setLoading(false);
+    }
+  }
+
+  async function logout() {
+    try {
+      await api.logoutAdmin();
+      setAuthenticated(false);
+      setProfile(emptyProfile);
+    } catch {
+      setError("Could not log out. Check that the backend is running and try again.");
+    }
+  }
 
   function updateEntry<S extends RepeatedSection>(section: S, index: number, patch: Partial<EntryFor<S>>) {
     setProfile((current) => {
@@ -98,10 +144,21 @@ export default function AdminPage() {
           <h1>Manage your profile</h1>
           <p className="admin-intro">Changes saved here appear on your homepage.</p>
         </div>
-        <a className="admin-home-link" href="/">← View homepage</a>
+        <div className="admin-header-actions">{authenticated && <button className="secondary-button" type="button" onClick={logout}>Log out</button>}<ThemeToggle /><a className="admin-home-link" href={`${siteBasePath}/`}>← View homepage</a></div>
       </header>
 
-      {loading ? <p className="notice" role="status">Loading your profile…</p> : (
+      {authChecking ? <p className="notice" role="status">Checking admin access…</p> : !authenticated ? (
+        <form className="admin-login-card" onSubmit={login}>
+          <p className="eyebrow">Private area</p>
+          <h2>Admin sign in</h2>
+          <p className="admin-intro">Enter your password to manage the profile shown on the homepage.</p>
+          {authError && <p className="notice notice-error" role="alert">{authError}</p>}
+          <label className="admin-field">Password
+            <input type="password" autoComplete="current-password" required value={loginPassword} onChange={(event) => setLoginPassword(event.target.value)} />
+          </label>
+          <button className="primary-button" type="submit" disabled={loggingIn}>{loggingIn ? "Signing in…" : "Sign in"}</button>
+        </form>
+      ) : loading ? <p className="notice" role="status">Loading your profile…</p> : (
         <form className="admin-form" onSubmit={saveProfile}>
           {error && <p className="notice notice-error" role="alert">{error}</p>}
           {notice && <p className="notice notice-success" role="status">{notice}</p>}

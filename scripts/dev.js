@@ -56,6 +56,6 @@ if (process.platform !== "win32") {
   process.exit(1);
 }
 
-start("backend", python, ["-m", "uvicorn", "app.main:app", "--app-dir", "backend", "--reload", "--port", "8000"]);
+start("backend", python, ["-m", "uvicorn", "app.main:app", "--app-dir", "backend", "--reload", "--port", "8001"]);
 start("frontend", "npm", ["--prefix", "frontend", "run", "dev"], { shell: true });
-process.stdout.write("Starting backend on :8000 and frontend on :3000. Press Ctrl+C to stop both.\n");
+process.stdout.write("Starting backend on :8001 and frontend on :3000. Press Ctrl+C to stop both.\n");

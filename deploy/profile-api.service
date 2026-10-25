@@ -1,0 +1,15 @@
+[Unit]
+Description=Personal Profile API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/AI_Fun
+EnvironmentFile=%h/AI_Fun/.env
+ExecStart=%h/AI_Fun/.venv/bin/python -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8001
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
