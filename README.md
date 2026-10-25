@@ -44,7 +44,7 @@ npm --prefix frontend run dev
 
 Visit <http://localhost:3000>. Configure `NEXT_PUBLIC_API_URL` in `frontend/.env.local` if the API is elsewhere. Select **View resume** to reveal the CV. Open <http://localhost:3000/admin> and sign in with `ADMIN_PASSWORD` to edit the profile shown on the homepage; save changes to publish them immediately. The profile is structured around professional experience, grouped technical skills, awards, and education. No personal details are seeded or fabricated.
 
-The authenticated `/admin` page also accepts photo and video uploads. Uploads are written to `PHOTO_UPLOAD_DIR` (default `./data/photos`), are limited to 100 MB per file and supported image/video extensions, and are not served publicly. Set `PHOTO_UPLOAD_MOUNT` to the mounted external-drive root in production; uploads return an unavailable error if that drive is not mounted.
+The authenticated `/admin` page also accepts photo and video uploads. Uploads are written to `PHOTO_UPLOAD_DIR` (default `./data/photos`), are limited to 100 MB per file and supported image/video extensions, and are not served publicly. Exact duplicate contents in that folder are skipped. Set `PHOTO_UPLOAD_MOUNT` to the mounted external-drive root in production; uploads return an unavailable error if that drive is not mounted.
 
 ### GitHub Pages deployment
 

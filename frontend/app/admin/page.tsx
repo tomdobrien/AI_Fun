@@ -149,14 +149,16 @@ export default function AdminPage() {
     setPhotoNotice("");
     setPhotoError("");
     let uploaded = 0;
-    for (const file of photoFiles) {
-      setPhotoProgress(`Uploading ${uploaded + 1} of ${photoFiles.length}: ${file.name}`);
+    let skipped = 0;
+    for (const [index, file] of photoFiles.entries()) {
+      setPhotoProgress(`Uploading and checking ${index + 1} of ${photoFiles.length}: ${file.name}`);
       try {
-        await api.uploadPhoto(file);
-        uploaded += 1;
+        const result = await api.uploadPhoto(file);
+        if (result.duplicate) skipped += 1;
+        else uploaded += 1;
       } catch (cause) {
-        setPhotoError(`${uploaded} of ${photoFiles.length} uploaded. ${cause instanceof Error ? cause.message : "Upload failed."}`);
-        setPhotoFiles(photoFiles.slice(uploaded));
+        setPhotoError(`${uploaded} uploaded, ${skipped} duplicates skipped. ${cause instanceof Error ? cause.message : "Upload failed."}`);
+        setPhotoFiles(photoFiles.slice(index));
         if (photoInputRef.current) photoInputRef.current.value = "";
         setPhotoProgress("");
         setUploadingPhotos(false);
@@ -164,7 +166,9 @@ export default function AdminPage() {
       }
     }
     setPhotoProgress("");
-    setPhotoNotice(`${uploaded} ${uploaded === 1 ? "file was" : "files were"} saved to your Pi photo folder.`);
+    setPhotoNotice(uploaded > 0
+      ? `${uploaded} new ${uploaded === 1 ? "file was" : "files were"} saved; ${skipped} duplicates skipped.`
+      : `No new files were saved; ${skipped} ${skipped === 1 ? "duplicate was" : "duplicates were"} skipped.`);
     setPhotoFiles([]);
     if (photoInputRef.current) photoInputRef.current.value = "";
     setUploadingPhotos(false);

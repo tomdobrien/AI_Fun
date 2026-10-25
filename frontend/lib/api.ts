@@ -34,7 +34,7 @@ export const api = {
     }
     return response.json() as Promise<Profile>;
   },
-  async uploadPhoto(file: File): Promise<{ filename: string; bytes: number }> {
+  async uploadPhoto(file: File): Promise<{ filename: string; bytes: number; duplicate: boolean }> {
     const response = await fetch(`${apiBaseUrl}/api/admin/photos`, {
       method: "POST",
       credentials: "omit",
@@ -48,7 +48,7 @@ export const api = {
     if (!response.ok) {
       throw new Error(await errorMessage(response, `Upload failed for ${file.name}.`));
     }
-    return response.json() as Promise<{ filename: string; bytes: number }>;
+    return response.json() as Promise<{ filename: string; bytes: number; duplicate: boolean }>;
   },
   async getAdminSession(): Promise<boolean> {
     if (!adminSessionToken) return false;

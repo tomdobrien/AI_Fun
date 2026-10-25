@@ -1,5 +1,7 @@
-import hmac
+import asyncio
 import errno
+import hashlib
+import hmac
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import unquote
@@ -26,6 +28,7 @@ router = APIRouter(prefix="/api")
 secure_cookie = settings.app_env.lower() not in {"development", "dev", "test"}
 cookie_samesite = "none" if secure_cookie else "strict"
 MAX_PHOTO_UPLOAD_BYTES = 100 * 1024 * 1024
+PHOTO_UPLOAD_LOCK = asyncio.Lock()
 ALLOWED_PHOTO_EXTENSIONS = {
     ".avif", ".bmp", ".dng", ".gif", ".heic", ".heif", ".jpeg", ".jpg",
     ".m4v", ".mov", ".mp4", ".png", ".tif", ".tiff", ".webm", ".webp",
@@ -129,16 +132,25 @@ async def upload_admin_photo(
     destination = directory / stored_name
     temporary = directory / f".{upload_id}.uploading"
     total_bytes = 0
+    content_hash = hashlib.sha256()
     try:
         with temporary.open("xb") as output:
             async for chunk in request.stream():
                 total_bytes += len(chunk)
                 if total_bytes > MAX_PHOTO_UPLOAD_BYTES:
                     raise HTTPException(status_code=413, detail="Files must be 100 MB or smaller")
+                content_hash.update(chunk)
                 output.write(chunk)
         if total_bytes == 0:
             raise HTTPException(status_code=400, detail="The uploaded file is empty")
-        temporary.replace(destination)
+        digest = content_hash.hexdigest()
+        async with PHOTO_UPLOAD_LOCK:
+            if any(directory.glob(f"{digest}_*")):
+                temporary.unlink(missing_ok=True)
+                response.headers["Cache-Control"] = "no-store"
+                return {"filename": filename, "bytes": total_bytes, "duplicate": True}
+            destination = directory / f"{digest}_{filename}"
+            temporary.replace(destination)
     except HTTPException:
         temporary.unlink(missing_ok=True)
         raise
@@ -152,7 +164,7 @@ async def upload_admin_photo(
         raise
 
     response.headers["Cache-Control"] = "no-store"
-    return {"filename": filename, "bytes": total_bytes}
+    return {"filename": filename, "bytes": total_bytes, "duplicate": False}
 
 @router.get("/health", tags=["health"])
 def health(db: Session = Depends(get_db)) -> dict[str, str]:
