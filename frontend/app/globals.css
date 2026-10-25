@@ -89,7 +89,7 @@
 }
 .site-shell .hero::after {
   right:12%; bottom:13%; width:10px; height:10px; border-radius:50%;
-  background:var(--page-coral); box-shadow:0 0 0 9px rgba(228,163,111,.14),0 0 35px rgba(228,163,111,.55);
+  background:#91d8c8; box-shadow:0 0 0 9px rgba(145,216,200,.14),0 0 35px rgba(145,216,200,.45);
 }
 .site-shell .hero .eyebrow { display:flex; align-items:center; gap:11px; color:#a8d2c4; }
 .site-shell .hero .eyebrow::before { width:27px; height:1px; background:var(--page-coral); content:""; }
