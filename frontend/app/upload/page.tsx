@@ -2,9 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
-import ThemeToggle from "../theme-toggle";
-
-const siteBasePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+import SiteChrome from "../site-chrome";
 
 export default function UploadPage() {
   const [user, setUser] = useState<{ email: string; displayName: string | null } | null>(null);
@@ -74,14 +72,15 @@ export default function UploadPage() {
     setNotice("");
   }
 
-  return <main className="admin-shell">
-    <header className="admin-header">
-      <div><p className="eyebrow">Private storage</p><h1>File backup</h1><p className="admin-intro">Sign in to upload files to your private Pi folder.</p></div>
-      <div className="admin-header-actions">{user && <button className="secondary-button" type="button" onClick={logout}>Log out</button>}<ThemeToggle /><a className="admin-home-link" href={`${siteBasePath}/`}>← View homepage</a></div>
-    </header>
-    {checking ? <p className="notice" role="status">Checking upload access…</p> : user ? <>
-      <section className="admin-card admin-upload-card">
-        <p className="eyebrow">Signed in as</p><h2>{user.displayName || user.email}</h2><p className="admin-intro">Uploads go to your own folder and are private. Any file type is accepted, up to 100 MB per file. Exact duplicates are skipped.</p>
+  return <SiteChrome active="upload">
+    <main className="upload-page">
+      <div className="upload-page-heading">
+        <div><p className="home-kicker">02 / Private storage</p><h1>File backup</h1><p>Send files to your own private folder on the Pi.</p></div>
+        {user && <button className="secondary-button" type="button" onClick={logout}>Log out</button>}
+      </div>
+      {checking ? <p className="notice" role="status">Checking upload access…</p> : user ? <section className="admin-card admin-upload-card">
+        <p className="eyebrow">Signed in as</p><h2>{user.displayName || user.email}</h2>
+        <p className="admin-intro">Uploads go to your own folder and are private. Any file type is accepted, up to 100 MB per file. Exact duplicates are skipped.</p>
         <form className="admin-upload-form" onSubmit={upload}>
           <label className="admin-field">Files<input ref={input} type="file" multiple disabled={busy} onChange={(event) => { setFiles(Array.from(event.target.files ?? [])); setNotice(""); setError(""); }} /></label>
           {files.length > 0 && <p className="admin-empty">{files.length} {files.length === 1 ? "file" : "files"} selected</p>}
@@ -90,14 +89,14 @@ export default function UploadPage() {
           {error && <p className="notice notice-error" role="alert">{error}</p>}
           <button className="primary-button" type="submit" disabled={busy || !files.length}>{busy ? "Uploading…" : "Upload to my folder"}</button>
         </form>
-      </section>
-    </> : <form className="admin-login-card" onSubmit={login}>
-      <p className="eyebrow">Invited uploader</p><h2>Sign in</h2>
-      <p className="admin-intro">Upload access is provided by the site owner. This account cannot edit the resume or invite people.</p>
-      {error && <p className="notice notice-error" role="alert">{error}</p>}
-      <label className="admin-field">Email<input type="email" autoComplete="username" required value={email} onChange={(event) => setEmail(event.target.value)} /></label>
-      <label className="admin-field">Password<input type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} /></label>
-      <button className="primary-button" type="submit" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
-    </form>}
-  </main>;
+      </section> : <form className="admin-login-card" onSubmit={login}>
+        <p className="eyebrow">Invited uploader</p><h2>Sign in</h2>
+        <p className="admin-intro">Upload access is provided by the site owner. This account cannot edit the resume or invite people.</p>
+        {error && <p className="notice notice-error" role="alert">{error}</p>}
+        <label className="admin-field">Email<input type="email" autoComplete="username" required value={email} onChange={(event) => setEmail(event.target.value)} /></label>
+        <label className="admin-field">Password<input type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} /></label>
+        <button className="primary-button" type="submit" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
+      </form>}
+    </main>
+  </SiteChrome>;
 }

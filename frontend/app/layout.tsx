@@ -1,6 +1,11 @@
 import type { Metadata } from "next";
 import "./globals.css";
-export const metadata: Metadata = { title: "Personal Profile", description: "A personal introduction and resume." };
+import { PublicProfileProvider } from "./profile-context";
+
+export const metadata: Metadata = {
+  title: "Tom O'Brien | Personal site",
+  description: "A personal site for work, life, and what comes next.",
+};
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="en" suppressHydrationWarning><head><meta name="referrer" content="no-referrer" /><script dangerouslySetInnerHTML={{ __html: `(() => { try { const saved = localStorage.getItem("personal-profile-theme"); const dark = saved ? saved === "dark" : matchMedia("(prefers-color-scheme: dark)").matches; document.documentElement.dataset.theme = dark ? "dark" : "light"; } catch { document.documentElement.dataset.theme = "light"; } })();` }} /></head><body>{children}</body></html>;
+  return <html lang="en" suppressHydrationWarning><head><meta name="referrer" content="no-referrer" /><script dangerouslySetInnerHTML={{ __html: `(() => { try { const saved = localStorage.getItem("personal-profile-theme"); const dark = saved ? saved === "dark" : matchMedia("(prefers-color-scheme: dark)").matches; document.documentElement.dataset.theme = dark ? "dark" : "light"; } catch { document.documentElement.dataset.theme = "light"; } })();` }} /></head><body><PublicProfileProvider>{children}</PublicProfileProvider></body></html>;
 }
