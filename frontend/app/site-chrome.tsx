@@ -36,7 +36,7 @@ export default function SiteChrome({ children, active }: Readonly<{ children: Re
     {children}
     <footer className="site-footer">
       <span className="site-footer-note">Work, projects, and useful things.</span>
-      <SiteLink className="owner-corner-link" href={`${siteBasePath}/admin/`} aria-label="Owner sign in">{ownerName}</SiteLink>
+      <span><SiteLink href={`${siteBasePath}/terms/`}>Terms</SiteLink> · <SiteLink href={`${siteBasePath}/privacy/`}>Privacy</SiteLink> · <SiteLink href={`${siteBasePath}/acceptable-use/`}>Acceptable use</SiteLink> · <SiteLink className="owner-corner-link" href={`${siteBasePath}/admin/`} aria-label="Owner sign in">{ownerName}</SiteLink></span>
     </footer>
   </div>;
 }

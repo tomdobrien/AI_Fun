@@ -23,6 +23,7 @@ from app.api.admin_auth import (
     require_frontend_origin,
     require_upload_access,
     upload_session_user_id,
+    check_auth_rate_limit,
 )
 from app.api.upload_auth import hash_password, password_needs_rehash, verify_password
 from app.config import settings
@@ -90,6 +91,7 @@ def _user_response(user: UploadUser) -> dict[str, str | int | bool | None]:
 def admin_login(data: AdminLoginRequest, request: Request, response: Response) -> dict[str, str]:
     ensure_auth_is_configured()
     require_frontend_origin(request)
+    check_auth_rate_limit(request)
     if not hmac.compare_digest(data.password.get_secret_value(), settings.admin_password or ""):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect password")
     session_token = create_session()
@@ -221,6 +223,7 @@ def accept_upload_invitation(
     db: Session = Depends(get_db),
     _origin: None = Depends(require_frontend_origin),
 ) -> dict[str, str | int]:
+    check_auth_rate_limit(request)
     password = data.password.get_secret_value()
     if len(password) < 12 or len(password) > 256:
         raise HTTPException(status_code=422, detail="Choose a password between 12 and 256 characters")
@@ -289,6 +292,7 @@ def upload_user_login(
     _origin: None = Depends(require_frontend_origin),
 ) -> dict[str, str | int | None]:
     email = _normalize_email(data.email)
+    check_auth_rate_limit(request)
     password = data.password.get_secret_value()
     if len(password) > 256:
         raise HTTPException(status_code=401, detail="Email or password is incorrect")

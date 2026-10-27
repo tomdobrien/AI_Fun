@@ -1,7 +1,9 @@
 import hashlib
 import hmac
 import time
+from collections import defaultdict, deque
 from dataclasses import dataclass
+from threading import Lock
 
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
@@ -12,6 +14,10 @@ from app.models.upload_user import UploadUser
 
 SESSION_COOKIE = "profile_admin_session"
 SESSION_MAX_AGE = 8 * 60 * 60
+AUTH_WINDOW_SECONDS = 15 * 60
+AUTH_MAX_ATTEMPTS = 10
+_auth_attempts: dict[str, deque[float]] = defaultdict(deque)
+_auth_lock = Lock()
 
 
 @dataclass(frozen=True)
@@ -114,3 +120,20 @@ def require_upload_access(request: Request, db: Session = Depends(get_db)) -> Up
 def require_frontend_origin(request: Request) -> None:
     if request.headers.get("origin") not in settings.allowed_frontend_origins:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Request origin is not allowed")
+
+def check_auth_rate_limit(request: Request) -> None:
+    key = request.client.host if request.client else "unknown"
+    now = time.monotonic()
+    # Single-process protection; a trusted proxy may group visitors under one address.
+    with _auth_lock:
+        for source, history in list(_auth_attempts.items()):
+            if not history or now - history[-1] >= AUTH_WINDOW_SECONDS:
+                del _auth_attempts[source]
+        if key not in _auth_attempts and len(_auth_attempts) >= 4096:
+            raise HTTPException(status_code=429, detail="Too many sign-in attempts. Try again later.", headers={"Retry-After": str(AUTH_WINDOW_SECONDS)})
+        attempts = _auth_attempts[key]
+        while attempts and now - attempts[0] >= AUTH_WINDOW_SECONDS:
+            attempts.popleft()
+        if len(attempts) >= AUTH_MAX_ATTEMPTS:
+            raise HTTPException(status_code=429, detail="Too many sign-in attempts. Try again later.", headers={"Retry-After": str(AUTH_WINDOW_SECONDS)})
+        attempts.append(now)
