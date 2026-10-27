@@ -38,6 +38,7 @@ from app.schemas import ProfileResponse, ProfileUpdate
 from app.services.profile_service import ProfileService
 from app.services.file_storage import download_path, list_files, original_filename, upload_directory
 from app.services.media_preview import image_preview, issue_video_ticket, media_type, text_preview, verify_video_ticket
+from app.services.video_preview import cached_video, request_video_preview
 
 router = APIRouter(prefix="/api")
 secure_cookie = settings.app_env.lower() not in {"development", "dev", "test"}
@@ -566,9 +567,11 @@ def video_preview_ticket(data: VideoPreviewRequest, request: Request, response: 
     authorization = request.headers.get("authorization", "")
     session = (authorization[7:].strip() if authorization.lower().startswith("bearer ") else "") or request.cookies.get(SESSION_COOKIE, "")
     session_expires = int(session.split(".")[-2]) + SESSION_MAX_AGE
-    ticket, expires = issue_video_ticket(data.file_id, user.id if user else None, access.user_id, session_expires)
+    optimized, preparing = request_video_preview(path) if media[0] == "video" else (False, False)
+    ticket, expires = issue_video_ticket(data.file_id, user.id if user else None, access.user_id, session_expires,
+                                         "optimized" if optimized else "original")
     response.headers["Cache-Control"] = "no-store"
-    return {"ticket": ticket, "expiresAt": expires}
+    return {"ticket": ticket, "expiresAt": expires, "optimized": optimized, "preparing": preparing}
 
 
 @router.api_route("/files/video", methods=["GET", "HEAD"], tags=["media"])
@@ -586,6 +589,11 @@ def preview_video(request: Request, ticket: str = Query(max_length=2048), db: Se
     media = media_type(path)
     if not media or media[0] not in {"video", "audio"}:
         raise HTTPException(status_code=415, detail="Video playback is not available for this file")
+    if scope.get("variant", "original") == "optimized":
+        path = cached_video(path)
+        if path is None:
+            raise HTTPException(status_code=410, detail="This preview has expired; reopen the video")
+        media = ("video", "video/mp4")
     return FileResponse(path, media_type=media[1], headers=_preview_headers(),
                         filename="preview" + path.suffix.lower(), content_disposition_type="inline")
 

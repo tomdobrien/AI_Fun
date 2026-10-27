@@ -23,6 +23,8 @@ from app.services.media_preview import issue_video_ticket, verify_video_ticket
 
 @pytest.fixture
 def backups(tmp_path, monkeypatch):
+    from app.services import video_preview
+    monkeypatch.setattr(video_preview, "encoder_available", lambda: False)
     monkeypatch.setattr(settings, "photo_upload_dir", str(tmp_path / "backup"))
     monkeypatch.setattr(settings, "photo_upload_mount", None)
     monkeypatch.setattr(settings, "admin_password", "test-owner-password")
@@ -437,3 +439,37 @@ def test_disabled_account_cannot_use_site_session_or_profile(backups):
         db.commit()
     assert client.get("/api/session", headers=tokens["alice"]).status_code == 401
     assert client.get("/api/profile", headers=tokens["alice"]).status_code == 401
+
+
+def test_cached_video_tickets_keep_variants_stable_and_permissions_enforced(backups, media_files):
+    from app.services import video_preview
+
+    client, _, engine, tokens, _ = backups
+    _, movie = media_files
+    original_ticket = _video_ticket(client, tokens, movie)
+    cache = video_preview._cache() / f"v1-{video_preview._key(movie)}.mp4"
+    cache.write_bytes(b"optimized-private-preview-contents")
+    response = client.post("/api/files/video-ticket", json={"file_id": movie.name}, headers={**tokens["alice"], "Origin": "https://site.example"})
+    assert response.json()["optimized"] is True and response.json()["preparing"] is False
+    ticket = response.json()["ticket"]
+    assert verify_video_ticket(ticket)["variant"] == "optimized"
+    encoded, signature = original_ticket.split(".")
+    scope = json.loads(base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)))
+    scope["variant"] = "optimized"
+    changed = base64.urlsafe_b64encode(json.dumps(scope).encode()).rstrip(b"=").decode()
+    assert client.get("/api/files/video", params={"ticket": changed + "." + signature}).status_code == 401
+    assert client.get("/api/files/video", params={"ticket": original_ticket}).content == movie.read_bytes()
+    assert client.get("/api/files/video", params={"ticket": ticket}, headers={"Range": "bytes=0-8"}).content == cache.read_bytes()[:9]
+    assert client.head("/api/files/video", params={"ticket": ticket}).headers["content-type"] == "video/mp4"
+    assert client.get("/api/files/video-ticket", headers=tokens["bob"]).status_code == 405
+    with Session(engine) as db:
+        db.get(UploadUser, 1).permissions = []
+        db.commit()
+    assert client.get("/api/files/video", params={"ticket": ticket}).status_code == 403
+    assert client.get("/api/admin/files/download", params={"file_id": movie.name, "user_id": 1}, headers=tokens["alice"]).status_code == 401
+    with Session(engine) as db:
+        db.get(UploadUser, 1).permissions = ["files:view"]
+        db.commit()
+    cache.unlink()
+    assert client.get("/api/files/video", params={"ticket": ticket}).status_code == 410
+    assert client.get("/api/files/video", params={"ticket": original_ticket}).content == movie.read_bytes()

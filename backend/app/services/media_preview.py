@@ -142,9 +142,10 @@ def _ticket_secret() -> bytes:
     return settings.admin_session_secret.encode()
 
 
-def issue_video_ticket(file_id: str, target_id: int | None, viewer_id: int | None, session_expires: int) -> tuple[str, int]:
+def issue_video_ticket(file_id: str, target_id: int | None, viewer_id: int | None, session_expires: int,
+                       variant: str = "original") -> tuple[str, int]:
     expires = min(int(time.time()) + VIDEO_TICKET_SECONDS, session_expires)
-    payload = {"purpose": "video-preview-v1", "file": file_id, "target": target_id, "viewer": viewer_id, "expires": expires}
+    payload = {"purpose": "video-preview-v1", "file": file_id, "target": target_id, "viewer": viewer_id, "expires": expires, "variant": variant}
     encoded = base64.urlsafe_b64encode(json.dumps(payload, separators=(",", ":")).encode()).rstrip(b"=").decode("ascii")
     signature = hmac.new(_ticket_secret(), b"video-preview-v1:" + encoded.encode("ascii"), hashlib.sha256).hexdigest()
     return f"{encoded}.{signature}", expires
@@ -170,6 +171,8 @@ def verify_video_ticket(token: str) -> dict:
             raise ValueError("Invalid account scope")
         if not isinstance(payload.get("file"), str):
             raise ValueError("Invalid file")
+        if payload.get("variant", "original") not in {"original", "optimized"}:
+            raise ValueError("Invalid preview variant")
         return payload
     except (ValueError, TypeError, KeyError, UnicodeDecodeError) as exc:
         raise HTTPException(status_code=401, detail="Video access has expired; reopen the preview") from exc

@@ -139,15 +139,16 @@ export const api = {
     if (!response.ok) throw new Error(await errorMessage(response, "Could not load this image preview."));
     return response.blob();
   },
-  async getVideoPreview(fileId: string, userId?: number, signal?: AbortSignal): Promise<{ url: string; expiresAt: number }> {
+  async getVideoPreview(fileId: string, userId?: number, signal?: AbortSignal): Promise<{ url: string; expiresAt: number; optimized: boolean; preparing: boolean }> {
     const response = await fetch(`${apiBaseUrl}/api/files/video-ticket`, {
       method: "POST", cache: "no-store", credentials: "omit", signal,
       headers: { "Content-Type": "application/json", ...adminAuthorization() },
       body: JSON.stringify({ file_id: fileId, user_id: userId ?? null }),
     });
     if (!response.ok) throw new Error(await errorMessage(response, "Could not start video playback."));
-    const result = await response.json() as { ticket: string; expiresAt: number };
-    return { url: `${apiBaseUrl}/api/files/video?${new URLSearchParams({ ticket: result.ticket })}`, expiresAt: result.expiresAt };
+    const result = await response.json() as { ticket: string; expiresAt: number; optimized: boolean; preparing: boolean };
+    return { url: `${apiBaseUrl}/api/files/video?${new URLSearchParams({ ticket: result.ticket })}`, expiresAt: result.expiresAt,
+      optimized: result.optimized, preparing: result.preparing };
   },
   async getTextPreview(fileId: string, userId?: number, signal?: AbortSignal): Promise<{ text: string; truncated: boolean }> {
     const query = new URLSearchParams({ file_id: fileId }); if (userId !== undefined) query.set("user_id", String(userId));

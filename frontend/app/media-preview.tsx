@@ -59,6 +59,7 @@ export default function MediaPreview({ file, userId, onClose }: { file: StoredFi
   const [zoomed, setZoomed] = useState(false);
   const [text, setText] = useState<string | null>(null);
   const [truncated, setTruncated] = useState(false);
+  const [videoQuality, setVideoQuality] = useState<"original" | "preparing" | "optimized">("original");
 
   useEffect(() => {
     const element = dialog.current;
@@ -82,20 +83,32 @@ export default function MediaPreview({ file, userId, onClose }: { file: StoredFi
     const controller = new AbortController();
     let objectUrl: string | null = null;
     let renewal: number | undefined;
+    let currentVariant: boolean | null = null;
+    let currentExpiry = 0;
     setLoading(true);
     setError("");
     setSource(null);
     setText(null);
     setTruncated(false);
+    setVideoQuality("original");
 
     async function load() {
       try {
         if (file.mediaType === "video" || file.mediaType === "audio") {
           const result = await api.getVideoPreview(file.id!, userId, controller.signal);
           if (controller.signal.aborted) return;
-          setSource(result.url);
-          const remaining = result.expiresAt * 1000 - Date.now();
-          renewal = window.setTimeout(() => { rememberPlayback(); setRevision((value) => value + 1); },
+          // Polling for a derivative must not restart the original every few seconds.
+          if (currentVariant === null || currentVariant !== result.optimized || currentExpiry - Date.now() <= 30_000) {
+            if (currentVariant !== null) rememberPlayback();
+            currentVariant = result.optimized;
+            currentExpiry = result.expiresAt * 1000;
+            setError("");
+            setLoading(true);
+            setSource(result.url);
+          }
+          setVideoQuality(result.optimized ? "optimized" : result.preparing ? "preparing" : "original");
+          const remaining = currentExpiry - Date.now();
+          renewal = window.setTimeout(() => void load(), result.preparing ? 15_000 :
             remaining > 30_000 ? remaining - 15_000 : Math.max(1000, remaining + 1000));
         } else if (file.mediaType === "image") {
           const blob = await api.getImagePreview(file.id!, userId, false, controller.signal);
@@ -116,7 +129,15 @@ export default function MediaPreview({ file, userId, onClose }: { file: StoredFi
           setLoading(false);
         }
       } catch (cause) {
-        if (!controller.signal.aborted) { setError(cause instanceof Error ? cause.message : "Could not open this preview."); setLoading(false); }
+        if (!controller.signal.aborted) {
+          if (currentVariant !== null) {
+            // Keep playing through transient status-check failures, then try renewing again.
+            renewal = window.setTimeout(() => void load(), 15_000);
+          } else {
+            setError(cause instanceof Error ? cause.message : "Could not open this preview.");
+            setLoading(false);
+          }
+        }
       }
     }
     void load();
@@ -140,6 +161,7 @@ export default function MediaPreview({ file, userId, onClose }: { file: StoredFi
       {error && <div className="media-preview-error"><p className="notice notice-error" role="alert">{error}</p><button className="secondary-button" type="button" onClick={() => { rememberPlayback(); setRevision((value) => value + 1); }}>Retry preview</button></div>}
       {text !== null && <pre className="media-text-preview">{text}</pre>}
       {truncated && <p className="media-loading">Showing the first 1 MB of this file.</p>}
+      {source && file.mediaType === "video" && <p className="media-loading" role="status">{videoQuality === "optimized" ? "480p preview · lower bandwidth" : videoQuality === "preparing" ? "Preparing a smaller preview. You can play the original while it is being prepared." : "Original video"}</p>}
       {source && <div className={`media-canvas${zoomed ? " media-canvas-zoomed" : ""}`}>
         {file.mediaType === "video" || file.mediaType === "audio" ? <Player ref={(element) => { video.current = element; }} src={source} controls controlsList="nodownload noremoteplayback" disablePictureInPicture
           crossOrigin="anonymous" playsInline preload="metadata"
