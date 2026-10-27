@@ -247,6 +247,11 @@ button:disabled { opacity:.55; cursor:not-allowed; }
 .media-canvas audio { display:block; width:100%; margin:24px 0; }
 .media-text-preview { max-height:70dvh; margin:0; padding:24px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font:13px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace; background:var(--surface); }
 .media-pdf-preview { display:block; width:100%; height:70dvh; border:0; }
+.permission-picker { display:grid; gap:10px; margin:16px 0; padding:14px; border:1px solid var(--border); border-radius:5px; }
+.permission-picker legend { padding:0 6px; font-weight:600; }
+.permission-picker label { display:flex; align-items:center; gap:10px; font-size:14px; }
+.permission-picker input { width:18px; height:18px; accent-color:var(--accent); }
+.private-entry h1 { margin:0; font-family:var(--font-display); font-weight:400; }
 .media-canvas-zoomed { display:block; }
 .media-canvas-zoomed img { max-width:none; max-height:none; margin:auto; }
 .media-dialog-footer { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 24px; color:var(--muted); font-size:11px; }

@@ -10,7 +10,8 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.models.upload_user import UploadUser
+from app.models.upload_user import UploadUser, PublicAccess
+from app.permissions import PERMISSIONS
 
 SESSION_COOKIE = "profile_admin_session"
 SESSION_MAX_AGE = 8 * 60 * 60
@@ -24,6 +25,7 @@ _auth_lock = Lock()
 class UploadAccess:
     user_id: int | None
     is_owner: bool
+    permissions: frozenset[str] = frozenset()
 
 
 def _session_secret() -> bytes:
@@ -107,14 +109,39 @@ def require_upload_access(request: Request, db: Session = Depends(get_db)) -> Up
     ensure_auth_is_configured()
     token = _bearer_or_cookie(request)
     if is_valid_session(token):
-        return UploadAccess(user_id=None, is_owner=True)
+        return UploadAccess(user_id=None, is_owner=True, permissions=frozenset(PERMISSIONS))
     user_id = upload_session_user_id(token)
     if user_id is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sign in to upload")
     user = db.get(UploadUser, user_id)
     if user is None or user.disabled_at is not None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Upload account is unavailable")
-    return UploadAccess(user_id=user.id, is_owner=False)
+    return UploadAccess(user_id=user.id, is_owner=False, permissions=frozenset(user.permissions or []) & PERMISSIONS.keys())
+
+
+def require_permission(permission: str):
+    if permission not in PERMISSIONS:
+        raise ValueError(f"Unknown permission: {permission}")
+
+    def check(access: UploadAccess = Depends(require_upload_access)) -> UploadAccess:
+        if not access.is_owner and permission not in access.permissions:
+            raise HTTPException(status_code=403, detail="Your account does not have access to this feature")
+        return access
+
+    return check
+
+
+def public_permissions(db: Session) -> list[str]:
+    access = db.get(PublicAccess, 1)
+    return ["resume:view"] if access and "resume:view" in (access.permissions or []) else []
+
+
+def require_resume_access(request: Request, db: Session = Depends(get_db)) -> None:
+    if "resume:view" in public_permissions(db):
+        return
+    access = require_upload_access(request, db)
+    if not access.is_owner and "resume:view" not in access.permissions:
+        raise HTTPException(status_code=403, detail="Your account does not have access to the resume")
 
 
 def require_frontend_origin(request: Request) -> None:

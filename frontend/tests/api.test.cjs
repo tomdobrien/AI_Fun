@@ -10,9 +10,9 @@ const code = ts.transpileModule(fs.readFileSync(require.resolve("../lib/api.ts")
 
 function loadApi(storage, requests, response) {
   const context = { exports: {}, process: { env: { NODE_ENV: "development" } },
-    window: { sessionStorage: { getItem: (key) => storage.get(key) ?? null,
+    window: { dispatchEvent: () => {}, sessionStorage: { getItem: (key) => storage.get(key) ?? null,
       setItem: (key, value) => storage.set(key, value), removeItem: (key) => storage.delete(key) } },
-    fetch: async (url, options) => { requests.push({ url, ...options }); return response(); }, URLSearchParams };
+    fetch: async (url, options) => { requests.push({ url, ...options }); return response(); }, URLSearchParams, Event };
   vm.runInNewContext(code, context);
   return context.exports.api;
 }

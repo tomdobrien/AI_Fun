@@ -9,7 +9,7 @@ from urllib.parse import unquote
 from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, Field, SecretStr, field_validator
 from sqlalchemy import select, text, update
 from sqlalchemy.orm import Session
 from app.api.admin_auth import (
@@ -24,11 +24,15 @@ from app.api.admin_auth import (
     require_upload_access,
     upload_session_user_id,
     check_auth_rate_limit,
+    require_permission,
+    require_resume_access,
+    public_permissions,
 )
 from app.api.upload_auth import hash_password, password_needs_rehash, verify_password
 from app.config import settings
 from app.database import get_db
-from app.models.upload_user import UploadInvitation, UploadUser, utcnow
+from app.models.upload_user import UploadInvitation, UploadUser, PublicAccess, utcnow
+from app.permissions import PERMISSIONS
 from app.repositories.profile_repository import ProfileRepository
 from app.schemas import ProfileResponse, ProfileUpdate
 from app.services.profile_service import ProfileService
@@ -56,7 +60,27 @@ class VideoPreviewRequest(BaseModel):
     user_id: int | None = Field(default=None, gt=0)
 
 
-class InvitationCreateRequest(BaseModel):
+class PermissionsRequest(BaseModel):
+    permissions: list[str] = Field(default_factory=list, max_length=100)
+
+    @field_validator("permissions")
+    @classmethod
+    def known_permissions(cls, value: list[str]) -> list[str]:
+        if any(permission not in PERMISSIONS for permission in value):
+            raise ValueError("Unknown permission")
+        return sorted(set(value))
+
+
+class PublicPermissionsRequest(PermissionsRequest):
+    @field_validator("permissions")
+    @classmethod
+    def public_features_only(cls, value: list[str]) -> list[str]:
+        if any(permission != "resume:view" for permission in value):
+            raise ValueError("Only resume viewing can be granted to visitors")
+        return value
+
+
+class InvitationCreateRequest(PermissionsRequest):
     email: str
     display_name: str | None = None
 
@@ -77,13 +101,14 @@ def _normalize_email(value: str) -> str:
     return email
 
 
-def _user_response(user: UploadUser) -> dict[str, str | int | bool | None]:
+def _user_response(user: UploadUser) -> dict:
     return {
         "id": user.id,
         "email": user.email,
         "displayName": user.display_name,
         "createdAt": user.created_at.isoformat(),
         "active": user.disabled_at is None,
+        "permissions": user.permissions,
     }
 
 
@@ -114,6 +139,55 @@ def admin_session(response: Response, _admin: None = Depends(require_admin)) -> 
     return {"status": "authenticated"}
 
 
+@router.get("/session", tags=["auth"])
+def site_session(response: Response, db: Session = Depends(get_db),
+                 access: UploadAccess = Depends(require_upload_access)) -> dict:
+    response.headers["Cache-Control"] = "no-store"
+    user = db.get(UploadUser, access.user_id) if not access.is_owner else None
+    return {"isAdmin": access.is_owner, "email": user.email if user else None,
+            "displayName": user.display_name if user else "Administrator",
+            "permissions": sorted(access.permissions)}
+
+
+@router.get("/access", tags=["auth"])
+def visitor_access(response: Response, db: Session = Depends(get_db)) -> dict:
+    response.headers["Cache-Control"] = "no-store"
+    return {"permissions": public_permissions(db)}
+
+
+@router.put("/admin/public-access", tags=["admin"])
+def update_public_access(data: PublicPermissionsRequest, response: Response,
+                         db: Session = Depends(get_db), _admin: None = Depends(require_admin),
+                         _origin: None = Depends(require_frontend_origin)) -> dict:
+    access = db.get(PublicAccess, 1)
+    if access is None:
+        access = PublicAccess(id=1)
+        db.add(access)
+    access.permissions = data.permissions
+    db.commit()
+    response.headers["Cache-Control"] = "no-store"
+    return {"permissions": public_permissions(db)}
+
+
+@router.get("/admin/permissions", tags=["admin"])
+def permission_catalog(response: Response, _admin: None = Depends(require_admin)) -> list[dict]:
+    response.headers["Cache-Control"] = "no-store"
+    return [{"key": key, "label": label} for key, label in PERMISSIONS.items()]
+
+
+@router.put("/admin/upload-users/{user_id}/permissions", tags=["admin"])
+def update_user_permissions(user_id: int, data: PermissionsRequest, response: Response,
+                           db: Session = Depends(get_db), _admin: None = Depends(require_admin),
+                           _origin: None = Depends(require_frontend_origin)) -> dict:
+    user = db.get(UploadUser, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="Account not found")
+    user.permissions = data.permissions
+    db.commit()
+    response.headers["Cache-Control"] = "no-store"
+    return _user_response(user)
+
+
 @router.post("/admin/invitations", tags=["admin"])
 def create_upload_invitation(
     data: InvitationCreateRequest,
@@ -139,6 +213,7 @@ def create_upload_invitation(
         token_hash=hashlib.sha256(token.encode("utf-8")).hexdigest(),
         created_at=now,
         expires_at=now + timedelta(days=7),
+        permissions=data.permissions,
     )
     db.add(invitation)
     db.commit()
@@ -152,7 +227,7 @@ def list_upload_invitations(
     response: Response,
     db: Session = Depends(get_db),
     _admin: None = Depends(require_admin),
-) -> list[dict[str, str | int | bool | None]]:
+) -> list[dict]:
     response.headers["Cache-Control"] = "no-store"
     invitations = db.scalars(select(UploadInvitation).order_by(UploadInvitation.created_at.desc())).all()
     now = utcnow()
@@ -163,6 +238,7 @@ def list_upload_invitations(
         "expiresAt": invite.expires_at.isoformat(),
         "accepted": invite.accepted_at is not None,
         "revoked": invite.revoked_at is not None,
+        "permissions": invite.permissions,
         "expired": invite.expires_at.replace(tzinfo=timezone.utc) <= now if invite.expires_at.tzinfo is None else invite.expires_at <= now,
     } for invite in invitations]
 
@@ -191,7 +267,7 @@ def list_upload_users(
     response: Response,
     db: Session = Depends(get_db),
     _admin: None = Depends(require_admin),
-) -> list[dict[str, str | int | bool | None]]:
+) -> list[dict]:
     response.headers["Cache-Control"] = "no-store"
     users = db.scalars(select(UploadUser).order_by(UploadUser.created_at.desc())).all()
     return [_user_response(user) for user in users]
@@ -256,6 +332,7 @@ def accept_upload_invitation(
         display_name=invitation.display_name,
         password_hash=hash_password(password),
         created_at=now,
+        permissions=list(invitation.permissions),
     )
     db.add(user)
     db.commit()
@@ -271,7 +348,7 @@ def get_upload_invitation(
     response: Response,
     db: Session = Depends(get_db),
     _origin: None = Depends(require_frontend_origin),
-) -> dict[str, str | None]:
+) -> dict:
     token_hash = hashlib.sha256(data.token.encode("utf-8")).hexdigest()
     invitation = db.scalar(select(UploadInvitation).where(UploadInvitation.token_hash == token_hash))
     if invitation is None or invitation.accepted_at is not None or invitation.revoked_at is not None:
@@ -280,7 +357,7 @@ def get_upload_invitation(
     if expires_at <= utcnow():
         raise HTTPException(status_code=404, detail="This invitation is invalid, expired, or already used")
     response.headers["Cache-Control"] = "no-store"
-    return {"email": invitation.email, "displayName": invitation.display_name, "expiresAt": expires_at.isoformat()}
+    return {"email": invitation.email, "displayName": invitation.display_name, "expiresAt": expires_at.isoformat(), "permissions": invitation.permissions}
 
 
 @router.post("/upload/login", tags=["upload"])
@@ -339,7 +416,7 @@ async def upload_admin_photo(
     request: Request,
     response: Response,
     db: Session = Depends(get_db),
-    access: UploadAccess = Depends(require_upload_access),
+    access: UploadAccess = Depends(require_permission("files:upload")),
     _origin: None = Depends(require_frontend_origin),
 ) -> dict[str, str | int | bool]:
     filename = unquote(request.headers.get("x-file-name", "")).strip()
@@ -413,7 +490,7 @@ def admin_files(response: Response, user_id: int | None = None,
 
 @router.get("/upload/files", tags=["upload"])
 def uploader_files(response: Response, db: Session = Depends(get_db),
-                   access: UploadAccess = Depends(require_upload_access)) -> dict:
+                   access: UploadAccess = Depends(require_permission("files:view"))) -> dict:
     response.headers["Cache-Control"] = "no-store"
     return list_files(_storage_account(access.user_id, db), admin=False)
 
@@ -435,6 +512,8 @@ def admin_download(file_id: str, user_id: int | None = None, db: Session = Depen
 def _preview_account(access: UploadAccess, db: Session, user_id: int | None) -> UploadUser | None:
     if access.is_owner:
         return _storage_account(user_id, db)
+    if "files:view" not in access.permissions:
+        raise HTTPException(status_code=403, detail="Your account does not have access to file previews")
     if user_id is not None and user_id != access.user_id:
         raise HTTPException(status_code=403, detail="You can only view your own media")
     return _storage_account(access.user_id, db)
@@ -501,6 +580,8 @@ def preview_video(request: Request, ticket: str = Query(max_length=2048), db: Se
         viewer = db.get(UploadUser, scope["viewer"])
         if viewer is None or viewer.disabled_at is not None:
             raise HTTPException(status_code=401, detail="Upload account is unavailable")
+        if "files:view" not in (viewer.permissions or []):
+            raise HTTPException(status_code=403, detail="File viewing permission has been revoked")
     path = download_path(_storage_account(scope["target"], db), scope["file"])
     media = media_type(path)
     if not media or media[0] not in {"video", "audio"}:
@@ -517,7 +598,9 @@ def health(db: Session = Depends(get_db)) -> dict[str, str]:
         raise HTTPException(status_code=503, detail={"status": "unhealthy", "database": "unavailable"}) from exc
 
 @router.get("/profile", response_model=ProfileResponse, response_model_by_alias=True, tags=["profile"])
-def get_profile(db: Session = Depends(get_db)) -> ProfileResponse:
+def get_profile(response: Response, db: Session = Depends(get_db),
+                _access: None = Depends(require_resume_access)) -> ProfileResponse:
+    response.headers["Cache-Control"] = "no-store"
     return ProfileService(ProfileRepository(db)).get_profile()
 
 @router.put("/profile", response_model=ProfileResponse, response_model_by_alias=True, tags=["profile"])

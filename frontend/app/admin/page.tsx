@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
-import type { Award, Education, Experience, Profile, ProfileLink, SelectedWork, Skill, UploadInvitation, UploadUser } from "@/lib/types";
+import type { Award, Education, Experience, Profile, ProfileLink, SelectedWork, Skill, UploadInvitation, UploadUser, PermissionOption } from "@/lib/types";
 import ThemeToggle from "../theme-toggle";
 import FileBrowser from "../file-browser";
+import PermissionPicker from "../permission-picker";
 
 const siteBasePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
@@ -59,6 +60,10 @@ export default function AdminPage() {
   const [uploadInvitations, setUploadInvitations] = useState<UploadInvitation[]>([]);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteName, setInviteName] = useState("");
+  const [invitePermissions, setInvitePermissions] = useState<string[]>([]);
+  const [permissionOptions, setPermissionOptions] = useState<PermissionOption[]>([]);
+  const [publicPermissions, setPublicPermissions] = useState<string[]>([]);
+  const [permissionBusy, setPermissionBusy] = useState(false);
   const [inviteUrl, setInviteUrl] = useState("");
   const [inviteBusy, setInviteBusy] = useState(false);
   const [accountNotice, setAccountNotice] = useState("");
@@ -68,9 +73,13 @@ export default function AdminPage() {
   const photoInputRef = useRef<HTMLInputElement>(null);
 
   async function refreshUploadAccounts() {
-    const [users, invitations] = await Promise.all([api.listUploadUsers(), api.listUploadInvitations()]);
+    const [users, invitations, options, visitor] = await Promise.all([
+      api.listUploadUsers(), api.listUploadInvitations(), api.getPermissionOptions(), api.getPublicAccess(),
+    ]);
     setUploadUsers(users);
     setUploadInvitations(invitations);
+    setPermissionOptions(options);
+    setPublicPermissions(visitor.permissions);
   }
 
   useEffect(() => {
@@ -207,11 +216,12 @@ export default function AdminPage() {
     setAccountNotice("");
     setInviteUrl("");
     try {
-      const invitation = await api.createUploadInvitation(inviteEmail, inviteName);
+      const invitation = await api.createUploadInvitation(inviteEmail, inviteName, invitePermissions);
       setInviteUrl(`${window.location.origin}${siteBasePath}/invite/#token=${encodeURIComponent(invitation.token)}`);
       setAccountNotice(`Invitation created for ${invitation.email}. Share the link below; it expires in 7 days and can be used once.`);
       setInviteEmail("");
       setInviteName("");
+      setInvitePermissions([]);
       await refreshUploadAccounts();
     } catch (cause) {
       setAccountError(cause instanceof Error ? cause.message : "Could not create invitation.");
@@ -232,15 +242,29 @@ export default function AdminPage() {
   }
 
   async function disableUploader(user: UploadUser) {
-    if (!window.confirm(`Disable uploads for ${user.email}? Their existing backup files will stay in place.`)) return;
+    if (!window.confirm(`Disable site access for ${user.email}? Their existing backup files will stay in place.`)) return;
     setAccountError("");
     try {
       await api.disableUploadUser(user.id);
-      setAccountNotice(`Upload access for ${user.email} has been disabled.`);
+      setAccountNotice(`Site access for ${user.email} has been disabled.`);
       await refreshUploadAccounts();
     } catch (cause) {
       setAccountError(cause instanceof Error ? cause.message : "Could not disable this account.");
     }
+  }
+
+  async function savePermissions(user?: UploadUser) {
+    setPermissionBusy(true);
+    setAccountError("");
+    setAccountNotice("");
+    try {
+      if (user) await api.setUserPermissions(user.id, user.permissions);
+      else await api.setPublicPermissions(publicPermissions);
+      await refreshUploadAccounts();
+      setAccountNotice(user ? `Permissions saved for ${user.email}.` : "Public access saved.");
+    } catch (cause) {
+      setAccountError(cause instanceof Error ? cause.message : "Could not save permissions.");
+    } finally { setPermissionBusy(false); }
   }
 
   return (
@@ -249,7 +273,7 @@ export default function AdminPage() {
         <div>
           <p className="eyebrow">Profile editor</p>
           <h1>Manage your profile</h1>
-          <p className="admin-intro">Edit your profile, manage upload invitations, or send media to private Pi storage.</p>
+          <p className="admin-intro">Edit your profile, manage invitations and permissions, or send files to private Pi storage.</p>
         </div>
         <div className="admin-header-actions">{authenticated && <button className="secondary-button" type="button" onClick={logout}>Log out</button>}<ThemeToggle /><a className="admin-home-link" href={`${siteBasePath}/`}>← View homepage</a></div>
       </header>
@@ -283,24 +307,36 @@ export default function AdminPage() {
           </form>
         </section>
         <section className="admin-card admin-upload-card" aria-labelledby="upload-accounts-heading">
-          <div className="admin-section-heading"><div><p className="eyebrow">Access control</p><h2 id="upload-accounts-heading">Upload users</h2></div></div>
-          <p className="admin-intro">Invite someone to upload to their own private subfolder. They cannot edit your profile or invite other users. Your uploads remain in the main backup folder.</p>
+          <div className="admin-section-heading"><div><p className="eyebrow">Access control</p><h2 id="upload-accounts-heading">Site access and permissions</h2></div></div>
+          <p className="admin-intro">Select what visitors and invited accounts can access. Only you can change permissions. New features are never granted automatically.</p>
           {accountError && <p className="notice notice-error" role="alert">{accountError}</p>}
           {accountNotice && <p className="notice notice-success" role="status">{accountNotice}</p>}
+          <div className="admin-entry">
+            <h3>Visitors who are not signed in</h3>
+            <p className="field-hint">Enabling resume access makes the profile and contact details in the resume public. File access always requires an invited account.</p>
+            <PermissionPicker options={permissionOptions.filter((option) => option.key === "resume:view")} value={publicPermissions} onChange={setPublicPermissions} disabled={permissionBusy} />
+            <button className="secondary-button" type="button" disabled={permissionBusy} onClick={() => void savePermissions()}>Save public access</button>
+          </div>
           <form className="admin-upload-form" onSubmit={inviteUploader}>
             <div className="admin-field-grid">
               <label className="admin-field">Invite email<input type="email" required maxLength={254} autoComplete="email" value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} /></label>
               <label className="admin-field">Name (optional)<input maxLength={160} autoComplete="name" value={inviteName} onChange={(event) => setInviteName(event.target.value)} /></label>
             </div>
+            <PermissionPicker options={permissionOptions} value={invitePermissions} onChange={setInvitePermissions} disabled={inviteBusy} />
+            <p className="field-hint">Unchecked features are not granted to this account. Public features are available to everyone.</p>
             <button className="primary-button" type="submit" disabled={inviteBusy}>{inviteBusy ? "Creating invite…" : "Create invite"}</button>
           </form>
           {inviteUrl && <div className="admin-entry"><p className="field-hint">This one-time link is shown only now. Copy it and send it to the invited person.</p><label className="admin-field">Invitation link<input readOnly value={inviteUrl} onFocus={(event) => event.currentTarget.select()} /></label><button className="secondary-button" type="button" onClick={() => void navigator.clipboard.writeText(inviteUrl)}>Copy link</button></div>}
           <h3>Accounts</h3>
-          {uploadUsers.length === 0 ? <p className="admin-empty">No invited upload accounts yet.</p> : <div className="account-list">{uploadUsers.map((user) => <div className="account-row" key={user.id}><div><strong>{user.displayName || user.email}</strong><p className="field-hint">{user.email} · {user.active ? "Active" : "Disabled"}</p></div>{user.active && <button className="remove-button" type="button" onClick={() => void disableUploader(user)}>Disable</button>}</div>)}</div>}
+          {uploadUsers.length === 0 ? <p className="admin-empty">No invited accounts yet.</p> : <div className="account-list">{uploadUsers.map((user) => <div className="admin-entry" key={user.id}>
+            <div className="account-row"><div><strong>{user.displayName || user.email}</strong><p className="field-hint">{user.email} · {user.active ? "Active" : "Disabled"}</p></div>{user.active && <button className="remove-button" type="button" disabled={permissionBusy} onClick={() => void disableUploader(user)}>Disable</button>}</div>
+            <PermissionPicker options={permissionOptions} value={user.permissions} disabled={permissionBusy || !user.active} onChange={(permissions) => setUploadUsers((users) => users.map((item) => item.id === user.id ? { ...item, permissions } : item))} />
+            {user.active && <button className="secondary-button" type="button" disabled={permissionBusy} onClick={() => void savePermissions(user)}>Save permissions</button>}
+          </div>)}</div>}
           <h3>Invitations</h3>
           {uploadInvitations.length === 0 ? <p className="admin-empty">No invitations yet.</p> : <div className="account-list">{uploadInvitations.map((invitation) => {
             const state = invitation.accepted ? "Accepted" : invitation.revoked ? "Revoked" : invitation.expired ? "Expired" : "Pending";
-            return <div className="account-row" key={invitation.id}><div><strong>{invitation.displayName || invitation.email}</strong><p className="field-hint">{invitation.email} · {state}</p></div>{state === "Pending" && <button className="remove-button" type="button" onClick={() => void revokeInvitation(invitation.id)}>Revoke</button>}</div>;
+            return <div className="account-row" key={invitation.id}><div><strong>{invitation.displayName || invitation.email}</strong><p className="field-hint">{invitation.email} · {state}</p><p className="field-hint">{invitation.permissions.map((key) => permissionOptions.find((option) => option.key === key)?.label ?? key).join(", ") || "No account permissions"}</p></div>{state === "Pending" && <button className="remove-button" type="button" onClick={() => void revokeInvitation(invitation.id)}>Revoke</button>}</div>;
           })}</div>}
         </section>
         <section className="admin-card admin-upload-card" aria-labelledby="backup-files-heading">

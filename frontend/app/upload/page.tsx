@@ -1,15 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { api } from "@/lib/api";
 import SiteChrome from "../site-chrome";
 import FileBrowser from "../file-browser";
+import { usePublicProfile } from "../profile-context";
 
 export default function UploadPage() {
-  const [user, setUser] = useState<{ email: string; displayName: string | null } | null>(null);
-  const [checking, setChecking] = useState(true);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const { session: user, can } = usePublicProfile();
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState("");
@@ -17,25 +15,6 @@ export default function UploadPage() {
   const [error, setError] = useState("");
   const [fileRevision, setFileRevision] = useState(0);
   const input = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    api.getUploadSession().then(setUser).catch(() => setError("Could not verify your upload access."))
-      .finally(() => setChecking(false));
-  }, []);
-
-  async function login(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setBusy(true);
-    setError("");
-    try {
-      setUser(await api.loginUploadUser(email, password));
-      setPassword("");
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Sign in failed.");
-    } finally {
-      setBusy(false);
-    }
-  }
 
   async function upload(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -68,21 +47,13 @@ export default function UploadPage() {
     setFileRevision((value) => value + 1);
   }
 
-  function logout() {
-    api.clearUploadSession();
-    setUser(null);
-    setFiles([]);
-    setNotice("");
-  }
-
   return <SiteChrome active="upload">
     <main className="upload-page">
       <div className="upload-page-heading">
         <div><p className="home-kicker">02 / Private storage</p><h1>File backup</h1><p>Send files to your own private folder on the Pi.</p></div>
-        {user && <button className="secondary-button" type="button" onClick={logout}>Log out</button>}
       </div>
-      {checking ? <p className="notice" role="status">Checking upload access…</p> : user ? <><section className="admin-card admin-upload-card">
-        <p className="eyebrow">Signed in as</p><h2>{user.displayName || user.email}</h2>
+      {can("files:upload") && <section className="admin-card admin-upload-card">
+        <p className="eyebrow">Signed in as</p><h2>{user?.displayName || user?.email}</h2>
         <p className="admin-intro">Uploads go to your own folder and are private. Any file type is accepted, up to 500 MB per file. Supported text, code, images, video, audio, and PDF files can be viewed here. Exact duplicates are skipped.</p>
         <form className="admin-upload-form" onSubmit={upload}>
           <label className="admin-field">Files<input ref={input} type="file" multiple disabled={busy} onChange={(event) => { setFiles(Array.from(event.target.files ?? [])); setNotice(""); setError(""); }} /></label>
@@ -92,14 +63,8 @@ export default function UploadPage() {
           {error && <p className="notice notice-error" role="alert">{error}</p>}
           <button className="primary-button" type="submit" disabled={busy || !files.length}>{busy ? "Uploading…" : "Upload to my folder"}</button>
         </form>
-      </section><section className="admin-card"><FileBrowser revision={fileRevision} /></section></> : <form className="admin-login-card" onSubmit={login}>
-        <p className="eyebrow">Invited uploader</p><h2>Sign in</h2>
-        <p className="admin-intro">Upload access is provided by the site owner. This account cannot edit the resume or invite people.</p>
-        {error && <p className="notice notice-error" role="alert">{error}</p>}
-        <label className="admin-field">Email<input type="email" autoComplete="username" required value={email} onChange={(event) => setEmail(event.target.value)} /></label>
-        <label className="admin-field">Password<input type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} /></label>
-        <button className="primary-button" type="submit" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
-      </form>}
+      </section>}
+      {can("files:view") && <section className="admin-card"><FileBrowser revision={fileRevision} /></section>}
     </main>
   </SiteChrome>;
 }

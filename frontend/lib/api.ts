@@ -1,4 +1,4 @@
-import type { Profile, StoredFileList, UploadInvitation, UploadInviteDetails, UploadUser } from "./types";
+import type { Profile, StoredFileList, UploadInvitation, UploadInviteDetails, UploadUser, SiteSession, PermissionOption } from "./types";
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ||
   (process.env.NODE_ENV === "development" ? "http://localhost:8001" : "");
 let adminSessionToken: string | null = null;
@@ -16,6 +16,7 @@ function saveSession(token: string | null): void {
     if (token) window.sessionStorage.setItem(sessionKey, token);
     else window.sessionStorage.removeItem(sessionKey);
   } catch { /* Memory-only sessions remain usable if browser storage is blocked. */ }
+  if (typeof window !== "undefined") window.dispatchEvent(new Event("profile-session-change"));
 }
 
 function adminAuthorization(): Record<string, string> {
@@ -34,7 +35,7 @@ async function errorMessage(response: Response, fallback: string): Promise<strin
 
 export const api = {
   async getProfile(signal?: AbortSignal): Promise<Profile> {
-    const response = await fetch(`${apiBaseUrl}/api/profile`, { cache: "no-store", signal });
+    const response = await fetch(`${apiBaseUrl}/api/profile`, { cache: "no-store", credentials: "omit", headers: adminAuthorization(), signal });
     if (!response.ok) throw new Error(`Profile API returned ${response.status}`);
     return response.json() as Promise<Profile>;
   },
@@ -164,10 +165,10 @@ export const api = {
     if (!response.ok) throw new Error(await errorMessage(response, "Could not load invitations."));
     return response.json() as Promise<UploadInvitation[]>;
   },
-  async createUploadInvitation(email: string, displayName: string): Promise<{ id: number; email: string; token: string; expiresAt: string }> {
+  async createUploadInvitation(email: string, displayName: string, permissions: string[]): Promise<{ id: number; email: string; token: string; expiresAt: string }> {
     const response = await fetch(`${apiBaseUrl}/api/admin/invitations`, {
       method: "POST", credentials: "omit", headers: { "Content-Type": "application/json", ...adminAuthorization() },
-      body: JSON.stringify({ email, displayName: displayName || null }),
+      body: JSON.stringify({ email, display_name: displayName || null, permissions }),
     });
     if (!response.ok) throw new Error(await errorMessage(response, "Could not create invitation."));
     return response.json();
@@ -212,4 +213,34 @@ export const api = {
     return response.json() as Promise<{ email: string; displayName: string | null }>;
   },
   clearUploadSession(): void { saveSession(null); },
+  async getSiteSession(signal?: AbortSignal): Promise<SiteSession | null> {
+    if (!sessionToken()) return null;
+    const response = await fetch(`${apiBaseUrl}/api/session`, { cache: "no-store", credentials: "omit", headers: adminAuthorization(), signal });
+    if (response.status === 401) { saveSession(null); return null; }
+    if (!response.ok) throw new Error(await errorMessage(response, "Could not verify site access."));
+    return response.json();
+  },
+  async getPublicAccess(signal?: AbortSignal): Promise<{ permissions: string[] }> {
+    const response = await fetch(`${apiBaseUrl}/api/access`, { cache: "no-store", credentials: "omit", signal });
+    if (!response.ok) throw new Error("The server is unavailable.");
+    return response.json();
+  },
+  async getPermissionOptions(): Promise<PermissionOption[]> {
+    const response = await fetch(`${apiBaseUrl}/api/admin/permissions`, { cache: "no-store", credentials: "omit", headers: adminAuthorization() });
+    if (!response.ok) throw new Error(await errorMessage(response, "Could not load permissions."));
+    return response.json();
+  },
+  async setUserPermissions(id: number, permissions: string[]): Promise<void> {
+    const response = await fetch(`${apiBaseUrl}/api/admin/upload-users/${id}/permissions`, {
+      method: "PUT", credentials: "omit", headers: { "Content-Type": "application/json", ...adminAuthorization() }, body: JSON.stringify({ permissions }),
+    });
+    if (!response.ok) throw new Error(await errorMessage(response, "Could not save permissions."));
+  },
+  async setPublicPermissions(permissions: string[]): Promise<void> {
+    const response = await fetch(`${apiBaseUrl}/api/admin/public-access`, {
+      method: "PUT", credentials: "omit", headers: { "Content-Type": "application/json", ...adminAuthorization() }, body: JSON.stringify({ permissions }),
+    });
+    if (!response.ok) throw new Error(await errorMessage(response, "Could not save visitor access."));
+    window.dispatchEvent(new Event("profile-session-change"));
+  },
 };

@@ -6,7 +6,7 @@ import SiteLink from "./site-link";
 
 const siteBasePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
-const sections = [
+const allSections = [
   {
     number: "01",
     title: "Resume",
@@ -26,7 +26,8 @@ const sections = [
 ];
 
 export default function HomeView() {
-  const { profile } = usePublicProfile();
+  const { profile, can } = usePublicProfile();
+  const sections = allSections.filter((section) => section.tone === "resume" ? can("resume:view") : can("files:upload") || can("files:view"));
   const displayName = profile.displayName?.trim();
   const title = profile.headline?.trim() || (displayName ? `A little about ${displayName}.` : "Work, life, and what comes next.");
   const description = profile.introduction?.trim() || "A personal site for the things I’m working on, the work I’ve done, and whatever belongs here next.";
@@ -41,7 +42,7 @@ export default function HomeView() {
           {profile.location && <p className="home-location"><span aria-hidden="true">↳</span> Based in {profile.location}</p>}
         </div>
         <aside className="home-index" aria-label="Site directory">
-          <div className="home-index-heading"><span>The directory</span><span aria-hidden="true">/ 02</span></div>
+          <div className="home-index-heading"><span>The directory</span><span aria-hidden="true">/ {sections.length.toString().padStart(2, "0")}</span></div>
           <p className="home-index-title">Work &amp;<br /><em>everyday things.</em></p>
           <nav aria-label="Quick links">{sections.map((section) => <SiteLink href={section.href} key={section.number}>
             <span className="home-index-number">{section.number}</span><span>{section.title}</span><span aria-hidden="true">↗</span>
@@ -56,6 +57,7 @@ export default function HomeView() {
           <p>Explore my background or head straight to your files.</p>
         </div>
         <div className="directory-list">
+          {sections.length === 0 && <p>No features have been shared with your account yet. Ask the administrator for access.</p>}
           {sections.map((section) => <SiteLink className={`directory-item directory-item-${section.tone}`} href={section.href} key={section.number}>
             <span className="directory-number">{section.number}</span>
             <span className="directory-copy"><strong>{section.title}</strong><span>{section.description}</span></span>

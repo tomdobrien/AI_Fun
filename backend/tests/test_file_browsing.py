@@ -32,8 +32,8 @@ def backups(tmp_path, monkeypatch):
     Base.metadata.create_all(engine)
     with Session(engine) as db:
         db.add_all([
-            UploadUser(id=1, email="alice@example.com", display_name="Alice", password_hash="unused"),
-            UploadUser(id=2, email="bob@example.com", display_name=None, password_hash="unused"),
+            UploadUser(id=1, email="alice@example.com", display_name="Alice", password_hash="unused", permissions=["files:upload", "files:view"]),
+            UploadUser(id=2, email="bob@example.com", display_name=None, password_hash="unused", permissions=["files:upload", "files:view"]),
         ])
         db.commit()
 
@@ -351,3 +351,89 @@ def test_upload_limit_checks_headers_and_stream_and_removes_partial_files(backup
     streamed = client.post("/api/admin/photos", content=iter([b"1234", b"56789"]), headers=headers)
     assert streamed.status_code == 413
     assert not list((root / "users" / "user-1").glob("*.uploading"))
+
+
+def test_permission_changes_apply_to_existing_sessions_and_playback_tickets(backups, media_files):
+    client, _, _, tokens, _ = backups
+    photo, movie = media_files
+    ticket = _video_ticket(client, tokens, movie)
+    owner = {**tokens["owner"], "Origin": "https://site.example"}
+    assert client.put("/api/admin/upload-users/1/permissions", json={"permissions": []}, headers=owner).status_code == 200
+    assert client.get("/api/session", headers=tokens["alice"]).json()["permissions"] == []
+    assert client.get("/api/profile", headers=tokens["alice"]).status_code == 403
+    assert client.get("/api/upload/files", headers=tokens["alice"]).status_code == 403
+    for route in ("image", "text", "pdf"):
+        assert client.get(f"/api/files/{route}", params={"file_id": photo.name}, headers=tokens["alice"]).status_code == 403
+    assert client.post("/api/admin/photos", content=b"private", headers={**tokens["alice"], "Origin": "https://site.example", "X-File-Name": "blocked.txt"}).status_code == 403
+    assert client.get("/api/files/video", params={"ticket": ticket}).status_code == 403
+    assert client.post("/api/files/video-ticket", json={"file_id": movie.name}, headers={**tokens["alice"], "Origin": "https://site.example"}).status_code == 403
+    assert client.get("/api/admin/files?user_id=1", headers=tokens["owner"]).status_code == 200
+    for permissions, may_upload, may_view in [(["files:upload"], True, False), (["files:view"], False, True), (["resume:view"], False, False)]:
+        assert client.put("/api/admin/upload-users/1/permissions", json={"permissions": permissions}, headers=owner).status_code == 200
+        assert client.get("/api/upload/files", headers=tokens["alice"]).status_code == (200 if may_view else 403)
+        upload = client.post("/api/admin/photos", content=b"allowed", headers={**tokens["alice"], "Origin": "https://site.example", "X-File-Name": "allowed.txt"})
+        assert upload.status_code == (200 if may_upload else 403)
+        assert client.get("/api/profile", headers=tokens["alice"]).status_code == (200 if permissions == ["resume:view"] else 403)
+
+
+def test_only_admin_can_change_permissions_and_public_access(backups):
+    client, _, _, tokens, _ = backups
+    for headers in ({"Origin": "https://site.example"}, {**tokens["alice"], "Origin": "https://site.example"}):
+        assert client.put("/api/admin/upload-users/1/permissions", json={"permissions": ["resume:view"]}, headers=headers).status_code == 401
+        assert client.put("/api/admin/public-access", json={"permissions": ["resume:view"]}, headers=headers).status_code == 401
+        assert client.get("/api/admin/permissions", headers=headers).status_code == 401
+    owner = {**tokens["owner"], "Origin": "https://site.example"}
+    assert client.put("/api/admin/upload-users/1/permissions", json={"permissions": ["admin"]}, headers=owner).status_code == 422
+    assert client.put("/api/admin/public-access", json={"permissions": ["files:view"]}, headers=owner).status_code == 422
+    assert client.put("/api/admin/public-access", json={"permissions": ["files:upload"]}, headers=owner).status_code == 422
+    assert client.put("/api/admin/upload-users/1/permissions", json={"permissions": []}, headers={**tokens["owner"], "Origin": "https://bad.example"}).status_code == 403
+    assert client.put("/api/admin/public-access", json={"permissions": []}, headers={**tokens["owner"], "Origin": "https://bad.example"}).status_code == 403
+    assert client.get("/api/access").json() == {"permissions": []}
+    assert client.get("/api/profile").status_code == 401
+    assert client.put("/api/admin/public-access", json={"permissions": ["resume:view"]}, headers=owner).status_code == 200
+    assert client.get("/api/access").json() == {"permissions": ["resume:view"]}
+    public = client.get("/api/profile")
+    assert public.status_code == 200 and public.headers["cache-control"] == "no-store"
+    assert client.get("/api/upload/files").status_code == 401
+    assert client.put("/api/admin/public-access", json={"permissions": []}, headers=owner).status_code == 200
+    assert client.get("/api/profile").status_code == 401
+    assert client.get("/api/profile", headers=tokens["owner"]).status_code == 200
+
+
+def test_invitation_permissions_cannot_be_chosen_or_escalated_by_recipient(backups, monkeypatch):
+    from app.api import admin_auth
+
+    client, _, engine, tokens, _ = backups
+    monkeypatch.setattr(admin_auth, "_auth_attempts", admin_auth.defaultdict(admin_auth.deque))
+    owner = {**tokens["owner"], "Origin": "https://site.example"}
+    catalog = client.get("/api/admin/permissions", headers=tokens["owner"]).json()
+    assert {item["key"] for item in catalog} == {"resume:view", "files:upload", "files:view"}
+    for index, selected in enumerate(([], ["files:view"])):
+        email = f"invited{index}@example.com"
+        created = client.post("/api/admin/invitations", json={"email": email, "display_name": "Friend", "permissions": selected}, headers=owner)
+        assert created.status_code == 200
+        token = created.json()["token"]
+        lookup = client.post("/api/upload/invitations/validate", json={"token": token}, headers={"Origin": "https://site.example"})
+        assert lookup.json()["permissions"] == selected
+        acceptance = {"token": token, "password": "a-long-test-password", "permissions": ["resume:view", "files:upload", "admin"]}
+        assert client.post("/api/upload/invitations/accept", json=acceptance, headers={"Origin": "https://site.example"}).status_code == 200
+        assert client.post("/api/upload/invitations/accept", json=acceptance, headers={"Origin": "https://site.example"}).status_code == 400
+        with Session(engine) as db:
+            from sqlalchemy import select
+            user = db.scalar(select(UploadUser).where(UploadUser.email == email))
+            assert user.permissions == selected and user.display_name == "Friend"
+        login = client.post("/api/upload/login", json={"email": email, "password": acceptance["password"]}, headers={"Origin": "https://site.example"})
+        session = client.get("/api/session", headers={"Authorization": "Bearer " + login.json()["token"]}).json()
+        assert session["permissions"] == selected and session["isAdmin"] is False
+    assert client.post("/api/admin/invitations", json={"email": "x@example.com", "permissions": ["admin"]}, headers=owner).status_code == 422
+
+
+def test_disabled_account_cannot_use_site_session_or_profile(backups):
+    client, _, engine, tokens, _ = backups
+    with Session(engine) as db:
+        user = db.get(UploadUser, 1)
+        user.permissions = ["resume:view"]
+        user.disabled_at = utcnow()
+        db.commit()
+    assert client.get("/api/session", headers=tokens["alice"]).status_code == 401
+    assert client.get("/api/profile", headers=tokens["alice"]).status_code == 401
