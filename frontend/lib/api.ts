@@ -2,9 +2,25 @@ import type { Profile, StoredFileList, UploadInvitation, UploadInviteDetails, Up
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ||
   (process.env.NODE_ENV === "development" ? "http://localhost:8001" : "");
 let adminSessionToken: string | null = null;
+const sessionKey = `profile-session:${apiBaseUrl}`;
+
+function sessionToken(): string | null {
+  if (typeof window === "undefined") return null;
+  try { return window.sessionStorage.getItem(sessionKey); }
+  catch { return adminSessionToken; }
+}
+
+function saveSession(token: string | null): void {
+  adminSessionToken = token;
+  try {
+    if (token) window.sessionStorage.setItem(sessionKey, token);
+    else window.sessionStorage.removeItem(sessionKey);
+  } catch { /* Memory-only sessions remain usable if browser storage is blocked. */ }
+}
 
 function adminAuthorization(): Record<string, string> {
-  return adminSessionToken ? { Authorization: `Bearer ${adminSessionToken}` } : {};
+  const token = sessionToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 async function errorMessage(response: Response, fallback: string): Promise<string> {
@@ -35,6 +51,7 @@ export const api = {
     return response.json() as Promise<Profile>;
   },
   async uploadPhoto(file: File): Promise<{ filename: string; bytes: number; duplicate: boolean }> {
+    if (file.size > 500 * 1024 * 1024) throw new Error("Files must be 500 MB or smaller.");
     const response = await fetch(`${apiBaseUrl}/api/admin/photos`, {
       method: "POST",
       credentials: "omit",
@@ -51,13 +68,13 @@ export const api = {
     return response.json() as Promise<{ filename: string; bytes: number; duplicate: boolean }>;
   },
   async getAdminSession(): Promise<boolean> {
-    if (!adminSessionToken) return false;
+    if (!sessionToken() || sessionToken()?.startsWith("upload.")) return false;
     const response = await fetch(`${apiBaseUrl}/api/admin/session`, {
       cache: "no-store",
       credentials: "omit",
       headers: adminAuthorization(),
     });
-    if (response.status === 401) return false;
+    if (response.status === 401) { saveSession(null); return false; }
     if (!response.ok) throw new Error(await errorMessage(response, "Could not verify admin access."));
     return true;
   },
@@ -71,19 +88,19 @@ export const api = {
     if (!response.ok) throw new Error(await errorMessage(response, "Admin login failed."));
     const result = await response.json() as { token?: string };
     if (!result.token) throw new Error("Admin login did not return a session token.");
-    adminSessionToken = result.token;
+    saveSession(result.token);
   },
   async logoutAdmin(): Promise<void> {
+    saveSession(null);
     const response = await fetch(`${apiBaseUrl}/api/admin/logout`, {
       method: "POST",
       credentials: "omit",
       headers: adminAuthorization(),
     });
-    adminSessionToken = null;
     if (!response.ok) throw new Error(await errorMessage(response, "Could not log out."));
   },
   async listUploadUsers(): Promise<UploadUser[]> {
-    const response = await fetch(`${apiBaseUrl}/api/admin/upload-users`, { cache: "no-store", headers: adminAuthorization() });
+    const response = await fetch(`${apiBaseUrl}/api/admin/upload-users`, { cache: "no-store", credentials: "omit", headers: adminAuthorization() });
     if (!response.ok) throw new Error(await errorMessage(response, "Could not load upload accounts."));
     return response.json() as Promise<UploadUser[]>;
   },
@@ -131,25 +148,36 @@ export const api = {
     const result = await response.json() as { ticket: string; expiresAt: number };
     return { url: `${apiBaseUrl}/api/files/video?${new URLSearchParams({ ticket: result.ticket })}`, expiresAt: result.expiresAt };
   },
+  async getTextPreview(fileId: string, userId?: number, signal?: AbortSignal): Promise<{ text: string; truncated: boolean }> {
+    const query = new URLSearchParams({ file_id: fileId }); if (userId !== undefined) query.set("user_id", String(userId));
+    const response = await fetch(`${apiBaseUrl}/api/files/text?${query}`, { cache: "no-store", credentials: "omit", headers: adminAuthorization(), signal });
+    if (!response.ok) throw new Error(await errorMessage(response, "Could not load this text preview."));
+    return response.json();
+  },
+  async getPdfPreview(fileId: string, userId?: number, signal?: AbortSignal): Promise<Blob> {
+    const query = new URLSearchParams({ file_id: fileId }); if (userId !== undefined) query.set("user_id", String(userId));
+    const response = await fetch(`${apiBaseUrl}/api/files/pdf?${query}`, { cache: "no-store", credentials: "omit", headers: adminAuthorization(), signal });
+    if (!response.ok) throw new Error(await errorMessage(response, "Could not load this PDF preview.")); return response.blob();
+  },
   async listUploadInvitations(): Promise<UploadInvitation[]> {
-    const response = await fetch(`${apiBaseUrl}/api/admin/invitations`, { cache: "no-store", headers: adminAuthorization() });
+    const response = await fetch(`${apiBaseUrl}/api/admin/invitations`, { cache: "no-store", credentials: "omit", headers: adminAuthorization() });
     if (!response.ok) throw new Error(await errorMessage(response, "Could not load invitations."));
     return response.json() as Promise<UploadInvitation[]>;
   },
   async createUploadInvitation(email: string, displayName: string): Promise<{ id: number; email: string; token: string; expiresAt: string }> {
     const response = await fetch(`${apiBaseUrl}/api/admin/invitations`, {
-      method: "POST", headers: { "Content-Type": "application/json", ...adminAuthorization() },
+      method: "POST", credentials: "omit", headers: { "Content-Type": "application/json", ...adminAuthorization() },
       body: JSON.stringify({ email, displayName: displayName || null }),
     });
     if (!response.ok) throw new Error(await errorMessage(response, "Could not create invitation."));
     return response.json();
   },
   async revokeUploadInvitation(id: number): Promise<void> {
-    const response = await fetch(`${apiBaseUrl}/api/admin/invitations/${id}/revoke`, { method: "POST", headers: adminAuthorization() });
+    const response = await fetch(`${apiBaseUrl}/api/admin/invitations/${id}/revoke`, { method: "POST", credentials: "omit", headers: adminAuthorization() });
     if (!response.ok) throw new Error(await errorMessage(response, "Could not revoke invitation."));
   },
   async disableUploadUser(id: number): Promise<void> {
-    const response = await fetch(`${apiBaseUrl}/api/admin/upload-users/${id}/disable`, { method: "POST", headers: adminAuthorization() });
+    const response = await fetch(`${apiBaseUrl}/api/admin/upload-users/${id}/disable`, { method: "POST", credentials: "omit", headers: adminAuthorization() });
     if (!response.ok) throw new Error(await errorMessage(response, "Could not disable account."));
   },
   async getUploadInvite(token: string): Promise<UploadInviteDetails> {
@@ -168,20 +196,20 @@ export const api = {
   },
   async loginUploadUser(email: string, password: string): Promise<{ email: string; displayName: string | null }> {
     const response = await fetch(`${apiBaseUrl}/api/upload/login`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }),
+      method: "POST", credentials: "omit", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }),
     });
     if (!response.ok) throw new Error(await errorMessage(response, "Upload sign in failed."));
     const result = await response.json() as { token?: string; email: string; displayName: string | null };
     if (!result.token) throw new Error("Upload sign in did not return a session token.");
-    adminSessionToken = result.token;
+    saveSession(result.token);
     return { email: result.email, displayName: result.displayName };
   },
   async getUploadSession(): Promise<{ email: string; displayName: string | null } | null> {
-    if (!adminSessionToken) return null;
-    const response = await fetch(`${apiBaseUrl}/api/upload/session`, { cache: "no-store", headers: adminAuthorization() });
-    if (response.status === 401) return null;
+    if (!sessionToken()?.startsWith("upload.")) return null;
+    const response = await fetch(`${apiBaseUrl}/api/upload/session`, { cache: "no-store", credentials: "omit", headers: adminAuthorization() });
+    if (response.status === 401) { saveSession(null); return null; }
     if (!response.ok) throw new Error(await errorMessage(response, "Could not verify upload access."));
     return response.json() as Promise<{ email: string; displayName: string | null }>;
   },
-  clearUploadSession(): void { adminSessionToken = null; },
+  clearUploadSession(): void { saveSession(null); },
 };

@@ -117,10 +117,11 @@ export default function AdminPage() {
   async function logout() {
     try {
       await api.logoutAdmin();
+    } catch {
+      setAuthError("Signed out on this device. The server could not be reached.");
+    } finally {
       setAuthenticated(false);
       setProfile(emptyProfile);
-    } catch {
-      setError("Could not log out. Check that the backend is running and try again.");
     }
   }
 
@@ -273,7 +274,7 @@ export default function AdminPage() {
             <label className="admin-field">Photos and videos
               <input ref={photoInputRef} type="file" multiple disabled={uploadingPhotos} onChange={(event) => { setPhotoFiles(Array.from(event.target.files ?? [])); setPhotoNotice(""); setPhotoError(""); }} />
             </label>
-            <p className="field-hint">Any file type, up to 100 MB per file. Files are copied; originals stay on this device.</p>
+            <p className="field-hint">Any file type, up to 500 MB per file. Files are copied; originals stay on this device.</p>
             {photoFiles.length > 0 && <p className="admin-empty">{photoFiles.length} {photoFiles.length === 1 ? "file" : "files"} selected</p>}
             {photoProgress && <p className="notice" role="status">{photoProgress}</p>}
             {photoNotice && <p className="notice notice-success" role="status">{photoNotice}</p>}

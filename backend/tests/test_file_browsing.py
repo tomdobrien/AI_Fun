@@ -291,3 +291,63 @@ def test_active_file_types_are_never_previewed_and_large_images_are_rejected(bac
     monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 100)
     response = client.get("/api/files/image", params={"file_id": photo.name}, headers=tokens["alice"])
     assert response.status_code == 413
+
+
+def test_text_previews_are_bounded_inert_and_account_scoped(backups):
+    from app.services.media_preview import TEXT_PREVIEW_BYTES
+
+    client, root, _, tokens, _ = backups
+    directory = root / "users" / "user-1"
+    samples = {"Makefile": b"all:\n\techo hello", "source.unusual": b"print('hello')",
+               "page.html": b'<script>alert("unsafe")</script>',
+               "unicode.txt": "hello \u2603".encode("utf-16"), "binary.txt": b"\x00\xff\x01"}
+    for name, content in samples.items():
+        (directory / name).write_bytes(content)
+    items = {item["filename"]: item for item in client.get("/api/upload/files", headers=tokens["alice"]).json()["files"]}
+    assert items["Makefile"]["mediaType"] == "text"
+    assert items["source.unusual"]["mediaType"] == "text"
+    assert "mediaType" not in items["binary.txt"]
+    for name in ("Makefile", "source.unusual", "page.html", "unicode.txt"):
+        response = client.get("/api/files/text", params={"file_id": name}, headers=tokens["alice"])
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "application/json"
+        assert response.headers["cache-control"] == "no-store"
+        assert response.json()["text"] == samples[name].decode("utf-16" if name == "unicode.txt" else "utf-8")
+        assert response.json()["truncated"] is False
+    assert client.get("/api/files/text", params={"file_id": "Makefile"}).status_code == 401
+    assert client.get("/api/files/text", params={"file_id": "Makefile"}, headers=tokens["bob"]).status_code == 404
+    assert client.get("/api/files/text", params={"file_id": "Makefile", "user_id": 1}, headers=tokens["bob"]).status_code == 403
+    assert client.get("/api/files/text", params={"file_id": "binary.txt"}, headers=tokens["alice"]).status_code == 415
+    (directory / "large.log").write_bytes(b"a" * (TEXT_PREVIEW_BYTES + 100))
+    result = client.get("/api/files/text", params={"file_id": "large.log"}, headers=tokens["alice"]).json()
+    assert len(result["text"]) == TEXT_PREVIEW_BYTES and result["truncated"] is True
+
+
+def test_pdf_and_audio_access_and_pdf_size_bound(backups):
+    client, root, _, tokens, _ = backups
+    directory = root / "users" / "user-1"
+    (directory / "document.pdf").write_bytes(b"%PDF-1.4\n%%EOF")
+    (directory / "sound.wav").write_bytes(b"RIFF\x00\x00\x00\x00WAVE" + b"\x00" * 32)
+    assert client.get("/api/files/pdf", params={"file_id": "document.pdf"}).status_code == 401
+    assert client.get("/api/files/pdf", params={"file_id": "document.pdf"}, headers=tokens["bob"]).status_code == 404
+    assert client.get("/api/files/pdf", params={"file_id": "document.pdf"}, headers=tokens["alice"]).headers["content-type"] == "application/pdf"
+    ticket = _video_ticket(client, tokens, directory / "sound.wav")
+    response = client.get("/api/files/video", params={"ticket": ticket}, headers={"Range": "bytes=0-3"})
+    assert response.status_code == 206 and response.content == b"RIFF"
+    with (directory / "document.pdf").open("r+b") as source:
+        source.truncate(32 * 1024 * 1024 + 1)
+    assert client.get("/api/files/pdf", params={"file_id": "document.pdf"}, headers=tokens["alice"]).status_code == 413
+
+
+def test_upload_limit_checks_headers_and_stream_and_removes_partial_files(backups, monkeypatch):
+    from app.api import routes
+
+    client, root, _, tokens, _ = backups
+    assert routes.MAX_UPLOAD_BYTES == 500 * 1024 * 1024
+    monkeypatch.setattr(routes, "MAX_UPLOAD_BYTES", 8)
+    headers = {**tokens["alice"], "Origin": "https://site.example", "X-File-Name": "boundary.txt"}
+    assert client.post("/api/admin/photos", content=b"12345678", headers=headers).status_code == 200
+    assert client.post("/api/admin/photos", content=b"123456789", headers=headers).status_code == 413
+    streamed = client.post("/api/admin/photos", content=iter([b"1234", b"56789"]), headers=headers)
+    assert streamed.status_code == 413
+    assert not list((root / "users" / "user-1").glob("*.uploading"))

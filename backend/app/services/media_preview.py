@@ -1,6 +1,7 @@
 """Private image derivatives and narrowly scoped video playback tickets."""
 
 import base64
+import codecs
 import hashlib
 import hmac
 import json
@@ -18,14 +19,46 @@ from app.config import settings
 VIDEO_TICKET_SECONDS = 10 * 60
 IMAGE_LOCK = threading.Lock()
 Image.MAX_IMAGE_PIXELS = 40_000_000
+TEXT_PREVIEW_BYTES = 1024 * 1024
+
+
+def text_encoding(sample: bytes) -> str | None:
+    encoding = "utf-8-sig"
+    if sample.startswith((codecs.BOM_UTF32_LE, codecs.BOM_UTF32_BE)):
+        encoding = "utf-32"
+    elif sample.startswith((codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)):
+        encoding = "utf-16"
+    try:
+        decoded = codecs.getincrementaldecoder(encoding)().decode(sample, final=False)
+        if any(ord(char) < 32 and char not in "\t\n\r\f" for char in decoded):
+            return None
+        return encoding
+    except UnicodeError:
+        return None
+
+
+def text_preview(path: Path) -> dict:
+    try:
+        with path.open("rb") as source:
+            data = source.read(TEXT_PREVIEW_BYTES + 1)
+        encoding = text_encoding(data[:4096])
+        if encoding is None:
+            raise HTTPException(status_code=415, detail="This file does not contain supported text")
+        truncated = len(data) > TEXT_PREVIEW_BYTES
+        content = codecs.getincrementaldecoder(encoding)(errors="replace").decode(
+            data[:TEXT_PREVIEW_BYTES], final=not truncated)
+        return {"text": content, "truncated": truncated}
+    except OSError as exc:
+        raise HTTPException(status_code=503, detail="Could not read this text preview") from exc
 
 
 def media_type(path: Path) -> tuple[str, str] | None:
-    """Require both an allowed extension and a matching media signature."""
+    """Recognize media signatures, then detect text independently of its extension."""
     extension = path.suffix.lower()
     try:
         with path.open("rb") as source:
-            header = source.read(32)
+            sample = source.read(4096)
+            header = sample[:32]
     except OSError:
         return None
     if extension in {".jpg", ".jpeg"} and header.startswith(b"\xff\xd8\xff"):
@@ -42,6 +75,20 @@ def media_type(path: Path) -> tuple[str, str] | None:
         return "video", "video/webm"
     if extension in {".ogv", ".ogg"} and header.startswith(b"OggS"):
         return "video", "video/ogg"
+    if extension == ".mp3" and (header.startswith(b"ID3") or (len(header) > 1 and header[0] == 255 and header[1] & 224 == 224)):
+        return "audio", "audio/mpeg"
+    if extension == ".wav" and header[:4] == b"RIFF" and header[8:12] == b"WAVE":
+        return "audio", "audio/wav"
+    if extension == ".flac" and header.startswith(b"fLaC"):
+        return "audio", "audio/flac"
+    if extension in {".oga", ".opus"} and header.startswith(b"OggS"):
+        return "audio", "audio/ogg"
+    if extension == ".m4a" and header[4:8] == b"ftyp":
+        return "audio", "audio/mp4"
+    if extension == ".pdf" and header.startswith(b"%PDF-"):
+        return "pdf", "application/pdf"
+    if extension not in {".jpg", ".jpeg", ".png", ".gif", ".webp", ".mp4", ".m4v", ".mov", ".webm", ".ogv", ".ogg", ".pdf", ".mp3", ".wav", ".flac", ".m4a", ".oga", ".opus"} and text_encoding(sample) is not None:
+        return "text", "text/plain"
     return None
 
 

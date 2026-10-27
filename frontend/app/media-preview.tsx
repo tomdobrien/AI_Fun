@@ -42,20 +42,23 @@ export function MediaThumbnail({ file, userId, onView }: { file: StoredFile; use
 
   return <button ref={button} type="button" className={`media-thumbnail media-thumbnail-${file.mediaType}`} onClick={onView}
     aria-label={`View ${file.filename}`} disabled={status !== "online"}>
-    {source ? <img src={source} alt="" loading="lazy" draggable={false} onContextMenu={(event) => event.preventDefault()} /> : <MediaGlyph video={file.mediaType === "video"} />}
+    {source ? <img src={source} alt="" loading="lazy" draggable={false} onContextMenu={(event) => event.preventDefault()} /> : file.mediaType === "image" || file.mediaType === "video" ? <MediaGlyph video={file.mediaType === "video"} /> : <span>{file.mediaType === "audio" ? "♪" : file.mediaType === "pdf" ? "PDF" : "Aa"}</span>}
     {file.mediaType === "video" && <span className="media-thumbnail-label">Video</span>}
   </button>;
 }
 
 export default function MediaPreview({ file, userId, onClose }: { file: StoredFile; userId?: number; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
-  const video = useRef<HTMLVideoElement>(null);
+  const video = useRef<HTMLMediaElement | null>(null);
+  const Player = file.mediaType === "audio" ? "audio" : "video";
   const playback = useRef({ time: 0, playing: false });
   const [source, setSource] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
   const [zoomed, setZoomed] = useState(false);
+  const [text, setText] = useState<string | null>(null);
+  const [truncated, setTruncated] = useState(false);
 
   useEffect(() => {
     const element = dialog.current;
@@ -82,21 +85,35 @@ export default function MediaPreview({ file, userId, onClose }: { file: StoredFi
     setLoading(true);
     setError("");
     setSource(null);
+    setText(null);
+    setTruncated(false);
 
     async function load() {
       try {
-        if (file.mediaType === "video") {
+        if (file.mediaType === "video" || file.mediaType === "audio") {
           const result = await api.getVideoPreview(file.id!, userId, controller.signal);
           if (controller.signal.aborted) return;
           setSource(result.url);
           const remaining = result.expiresAt * 1000 - Date.now();
           renewal = window.setTimeout(() => { rememberPlayback(); setRevision((value) => value + 1); },
             remaining > 30_000 ? remaining - 15_000 : Math.max(1000, remaining + 1000));
-        } else {
+        } else if (file.mediaType === "image") {
           const blob = await api.getImagePreview(file.id!, userId, false, controller.signal);
           if (controller.signal.aborted) return;
           objectUrl = URL.createObjectURL(blob);
           setSource(objectUrl);
+        } else if (file.mediaType === "text") {
+          const result = await api.getTextPreview(file.id!, userId, controller.signal);
+          if (controller.signal.aborted) return;
+          setText(result.text);
+          setTruncated(result.truncated);
+          setLoading(false);
+        } else {
+          const blob = await api.getPdfPreview(file.id!, userId, controller.signal);
+          if (controller.signal.aborted) return;
+          objectUrl = URL.createObjectURL(blob);
+          setSource(objectUrl);
+          setLoading(false);
         }
       } catch (cause) {
         if (!controller.signal.aborted) { setError(cause instanceof Error ? cause.message : "Could not open this preview."); setLoading(false); }
@@ -116,13 +133,15 @@ export default function MediaPreview({ file, userId, onClose }: { file: StoredFi
     onCancel={(event) => { event.preventDefault(); onClose(); }}
     onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <div className="media-dialog-content" onContextMenu={(event) => event.preventDefault()}>
-      <header className="media-dialog-header"><div><p className="eyebrow">{file.mediaType === "video" ? "Video player" : "Image preview"}</p><h2 id="media-preview-title">{file.filename}</h2></div>
+      <header className="media-dialog-header"><div><p className="eyebrow">{file.mediaType === "video" ? "Video player" : file.mediaType === "audio" ? "Audio player" : file.mediaType === "text" ? "Text preview" : file.mediaType === "pdf" ? "PDF preview" : "Image preview"}</p><h2 id="media-preview-title">{file.filename}</h2></div>
         <button className="secondary-button" type="button" onClick={onClose}>Close</button>
       </header>
       {loading && <p className="media-loading" role="status">Loading preview...</p>}
       {error && <div className="media-preview-error"><p className="notice notice-error" role="alert">{error}</p><button className="secondary-button" type="button" onClick={() => { rememberPlayback(); setRevision((value) => value + 1); }}>Retry preview</button></div>}
+      {text !== null && <pre className="media-text-preview">{text}</pre>}
+      {truncated && <p className="media-loading">Showing the first 1 MB of this file.</p>}
       {source && <div className={`media-canvas${zoomed ? " media-canvas-zoomed" : ""}`}>
-        {file.mediaType === "video" ? <video ref={video} src={source} controls controlsList="nodownload noremoteplayback" disablePictureInPicture
+        {file.mediaType === "video" || file.mediaType === "audio" ? <Player ref={(element) => { video.current = element; }} src={source} controls controlsList="nodownload noremoteplayback" disablePictureInPicture
           crossOrigin="anonymous" playsInline preload="metadata"
           onLoadedMetadata={() => {
             setLoading(false);
@@ -131,7 +150,8 @@ export default function MediaPreview({ file, userId, onClose }: { file: StoredFi
               if (playback.current.playing) void video.current.play().catch(() => {});
             }
           }}
-          onError={() => { setLoading(false); setError("This video could not be played. Its format may not be supported by your browser."); }} /> :
+          onError={() => { setLoading(false); setError("This video could not be played. Its format may not be supported by your browser."); }} /> : file.mediaType === "pdf" ?
+          <iframe title={file.filename} src={`${source}#toolbar=0`} className="media-pdf-preview" /> :
           <img src={source} alt={file.filename} draggable={false} onDragStart={(event) => event.preventDefault()}
             onLoad={() => setLoading(false)} onError={() => { setLoading(false); setError("This image preview could not be displayed."); }} />}
       </div>}

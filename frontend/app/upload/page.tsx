@@ -83,7 +83,7 @@ export default function UploadPage() {
       </div>
       {checking ? <p className="notice" role="status">Checking upload access…</p> : user ? <><section className="admin-card admin-upload-card">
         <p className="eyebrow">Signed in as</p><h2>{user.displayName || user.email}</h2>
-        <p className="admin-intro">Uploads go to your own folder and are private. Any file type is accepted, up to 100 MB per file. Exact duplicates are skipped.</p>
+        <p className="admin-intro">Uploads go to your own folder and are private. Any file type is accepted, up to 500 MB per file. Supported text, code, images, video, audio, and PDF files can be viewed here. Exact duplicates are skipped.</p>
         <form className="admin-upload-form" onSubmit={upload}>
           <label className="admin-field">Files<input ref={input} type="file" multiple disabled={busy} onChange={(event) => { setFiles(Array.from(event.target.files ?? [])); setNotice(""); setError(""); }} /></label>
           {files.length > 0 && <p className="admin-empty">{files.length} {files.length === 1 ? "file" : "files"} selected</p>}

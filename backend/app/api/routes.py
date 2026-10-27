@@ -33,12 +33,12 @@ from app.repositories.profile_repository import ProfileRepository
 from app.schemas import ProfileResponse, ProfileUpdate
 from app.services.profile_service import ProfileService
 from app.services.file_storage import download_path, list_files, original_filename, upload_directory
-from app.services.media_preview import image_preview, issue_video_ticket, media_type, verify_video_ticket
+from app.services.media_preview import image_preview, issue_video_ticket, media_type, text_preview, verify_video_ticket
 
 router = APIRouter(prefix="/api")
 secure_cookie = settings.app_env.lower() not in {"development", "dev", "test"}
 cookie_samesite = "none" if secure_cookie else "strict"
-MAX_UPLOAD_BYTES = 100 * 1024 * 1024
+MAX_UPLOAD_BYTES = 500 * 1024 * 1024
 UPLOAD_LOCK = asyncio.Lock()
 
 
@@ -351,7 +351,7 @@ async def upload_admin_photo(
     if content_length:
         try:
             if int(content_length) > MAX_UPLOAD_BYTES:
-                raise HTTPException(status_code=413, detail="Files must be 100 MB or smaller")
+                raise HTTPException(status_code=413, detail="Files must be 500 MB or smaller")
         except ValueError as exc:
             raise HTTPException(status_code=400, detail="Invalid content length") from exc
 
@@ -366,7 +366,7 @@ async def upload_admin_photo(
             async for chunk in request.stream():
                 total_bytes += len(chunk)
                 if total_bytes > MAX_UPLOAD_BYTES:
-                    raise HTTPException(status_code=413, detail="Files must be 100 MB or smaller")
+                    raise HTTPException(status_code=413, detail="Files must be 500 MB or smaller")
                 content_hash.update(chunk)
                 output.write(chunk)
         if total_bytes == 0:
@@ -454,6 +454,26 @@ def preview_image(file_id: str, thumbnail: bool = False, user_id: int | None = N
     return FileResponse(path, media_type="image/webp", headers=_preview_headers(),
                         filename="preview.webp", content_disposition_type="inline")
 
+@router.get("/files/text", tags=["media"])
+def preview_text(response: Response, file_id: str, user_id: int | None = None,
+                 db: Session = Depends(get_db), access: UploadAccess = Depends(require_upload_access)) -> dict:
+    user = _preview_account(access, db, user_id)
+    path = download_path(user, file_id)
+    if not (media := media_type(path)) or media[0] != "text":
+        raise HTTPException(status_code=415, detail="Text preview is not available for this file")
+    response.headers.update(_preview_headers())
+    return text_preview(path)
+
+@router.get("/files/pdf", tags=["media"])
+def preview_pdf(file_id: str, user_id: int | None = None, db: Session = Depends(get_db), access: UploadAccess = Depends(require_upload_access)) -> FileResponse:
+    user = _preview_account(access, db, user_id)
+    path = download_path(user, file_id)
+    if not (media := media_type(path)) or media[0] != "pdf":
+        raise HTTPException(status_code=415, detail="PDF preview is not available for this file")
+    if path.stat().st_size > 32 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="PDF previews are limited to 32 MB")
+    return FileResponse(path, media_type="application/pdf", headers=_preview_headers(), filename=original_filename(file_id), content_disposition_type="inline")
+
 
 @router.post("/files/video-ticket", tags=["media"])
 def video_preview_ticket(data: VideoPreviewRequest, request: Request, response: Response,
@@ -462,7 +482,7 @@ def video_preview_ticket(data: VideoPreviewRequest, request: Request, response: 
     user = _preview_account(access, db, data.user_id)
     path = download_path(user, data.file_id)
     media = media_type(path)
-    if not media or media[0] != "video":
+    if not media or media[0] not in {"video", "audio"}:
         raise HTTPException(status_code=415, detail="Video playback is not available for this file")
     authorization = request.headers.get("authorization", "")
     session = (authorization[7:].strip() if authorization.lower().startswith("bearer ") else "") or request.cookies.get(SESSION_COOKIE, "")
@@ -483,7 +503,7 @@ def preview_video(request: Request, ticket: str = Query(max_length=2048), db: Se
             raise HTTPException(status_code=401, detail="Upload account is unavailable")
     path = download_path(_storage_account(scope["target"], db), scope["file"])
     media = media_type(path)
-    if not media or media[0] != "video":
+    if not media or media[0] not in {"video", "audio"}:
         raise HTTPException(status_code=415, detail="Video playback is not available for this file")
     return FileResponse(path, media_type=media[1], headers=_preview_headers(),
                         filename="preview" + path.suffix.lower(), content_disposition_type="inline")
