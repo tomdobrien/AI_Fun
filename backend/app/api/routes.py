@@ -25,13 +25,12 @@ from app.api.admin_auth import (
     upload_session_user_id,
     check_auth_rate_limit,
     require_permission,
-    require_resume_access,
     public_permissions,
 )
 from app.api.upload_auth import hash_password, password_needs_rehash, verify_password
 from app.config import settings
 from app.database import get_db
-from app.models.upload_user import UploadInvitation, UploadUser, PublicAccess, utcnow
+from app.models.upload_user import UploadInvitation, UploadUser, utcnow
 from app.permissions import PERMISSIONS
 from app.repositories.profile_repository import ProfileRepository
 from app.schemas import ProfileResponse, ProfileUpdate
@@ -160,12 +159,8 @@ def visitor_access(response: Response, db: Session = Depends(get_db)) -> dict:
 def update_public_access(data: PublicPermissionsRequest, response: Response,
                          db: Session = Depends(get_db), _admin: None = Depends(require_admin),
                          _origin: None = Depends(require_frontend_origin)) -> dict:
-    access = db.get(PublicAccess, 1)
-    if access is None:
-        access = PublicAccess(id=1)
-        db.add(access)
-    access.permissions = data.permissions
-    db.commit()
+    if data.permissions != ["resume:view"]:
+        raise HTTPException(status_code=409, detail="The intro and resume are public. File access always requires sign-in.")
     response.headers["Cache-Control"] = "no-store"
     return {"permissions": public_permissions(db)}
 
@@ -606,8 +601,7 @@ def health(db: Session = Depends(get_db)) -> dict[str, str]:
         raise HTTPException(status_code=503, detail={"status": "unhealthy", "database": "unavailable"}) from exc
 
 @router.get("/profile", response_model=ProfileResponse, response_model_by_alias=True, tags=["profile"])
-def get_profile(response: Response, db: Session = Depends(get_db),
-                _access: None = Depends(require_resume_access)) -> ProfileResponse:
+def get_profile(response: Response, db: Session = Depends(get_db)) -> ProfileResponse:
     response.headers["Cache-Control"] = "no-store"
     return ProfileService(ProfileRepository(db)).get_profile()
 

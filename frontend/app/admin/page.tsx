@@ -62,7 +62,6 @@ export default function AdminPage() {
   const [inviteName, setInviteName] = useState("");
   const [invitePermissions, setInvitePermissions] = useState<string[]>([]);
   const [permissionOptions, setPermissionOptions] = useState<PermissionOption[]>([]);
-  const [publicPermissions, setPublicPermissions] = useState<string[]>([]);
   const [permissionBusy, setPermissionBusy] = useState(false);
   const [inviteUrl, setInviteUrl] = useState("");
   const [inviteBusy, setInviteBusy] = useState(false);
@@ -73,13 +72,12 @@ export default function AdminPage() {
   const photoInputRef = useRef<HTMLInputElement>(null);
 
   async function refreshUploadAccounts() {
-    const [users, invitations, options, visitor] = await Promise.all([
-      api.listUploadUsers(), api.listUploadInvitations(), api.getPermissionOptions(), api.getPublicAccess(),
+    const [users, invitations, options] = await Promise.all([
+      api.listUploadUsers(), api.listUploadInvitations(), api.getPermissionOptions(),
     ]);
     setUploadUsers(users);
     setUploadInvitations(invitations);
-    setPermissionOptions(options);
-    setPublicPermissions(visitor.permissions);
+    setPermissionOptions(options.filter((option) => option.key !== "resume:view"));
   }
 
   useEffect(() => {
@@ -167,7 +165,7 @@ export default function AdminPage() {
     setNotice("");
     try {
       setProfile(await api.updateProfile(profile));
-      setNotice("Your profile has been saved. The homepage will show these changes now.");
+      setNotice("Saved to the server. Publish an updated public profile snapshot to show these changes on the intro and resume.");
     } catch {
       setError("Could not save your changes. Check that the backend is running and try again.");
     } finally {
@@ -253,15 +251,14 @@ export default function AdminPage() {
     }
   }
 
-  async function savePermissions(user?: UploadUser) {
+  async function savePermissions(user: UploadUser) {
     setPermissionBusy(true);
     setAccountError("");
     setAccountNotice("");
     try {
-      if (user) await api.setUserPermissions(user.id, user.permissions);
-      else await api.setPublicPermissions(publicPermissions);
+      await api.setUserPermissions(user.id, user.permissions);
       await refreshUploadAccounts();
-      setAccountNotice(user ? `Permissions saved for ${user.email}.` : "Public access saved.");
+      setAccountNotice(`Permissions saved for ${user.email}.`);
     } catch (cause) {
       setAccountError(cause instanceof Error ? cause.message : "Could not save permissions.");
     } finally { setPermissionBusy(false); }
@@ -308,14 +305,12 @@ export default function AdminPage() {
         </section>
         <section className="admin-card admin-upload-card" aria-labelledby="upload-accounts-heading">
           <div className="admin-section-heading"><div><p className="eyebrow">Access control</p><h2 id="upload-accounts-heading">Site access and permissions</h2></div></div>
-          <p className="admin-intro">Select what visitors and invited accounts can access. Only you can change permissions. New features are never granted automatically.</p>
+          <p className="admin-intro">Select which file features invited accounts can access. Only you can change permissions. New features are never granted automatically.</p>
           {accountError && <p className="notice notice-error" role="alert">{accountError}</p>}
           {accountNotice && <p className="notice notice-success" role="status">{accountNotice}</p>}
           <div className="admin-entry">
-            <h3>Visitors who are not signed in</h3>
-            <p className="field-hint">Enabling resume access makes the profile and contact details in the resume public. File access always requires an invited account.</p>
-            <PermissionPicker options={permissionOptions.filter((option) => option.key === "resume:view")} value={publicPermissions} onChange={setPublicPermissions} disabled={permissionBusy} />
-            <button className="secondary-button" type="button" disabled={permissionBusy} onClick={() => void savePermissions()}>Save public access</button>
+            <h3>Public introduction and resume</h3>
+            <p className="field-hint">Your intro and resume are public, including a published copy that remains available when the server is offline. Refresh that copy when publishing resume updates. Only file backup requires an invited account.</p>
           </div>
           <form className="admin-upload-form" onSubmit={inviteUploader}>
             <div className="admin-field-grid">
@@ -457,7 +452,7 @@ export default function AdminPage() {
             </fieldset>)}
           </section>
 
-          <div className="admin-savebar"><p>Remember to save when you’re done.</p><button className="primary-button" type="submit" disabled={saving}>{saving ? "Saving…" : "Save profile"}<span aria-hidden="true">✓</span></button></div>
+          <div className="admin-savebar"><p>Save server changes, then publish the updated public snapshot.</p><button className="primary-button" type="submit" disabled={saving}>{saving ? "Saving…" : "Save profile"}<span aria-hidden="true">✓</span></button></div>
         </form>
         </>
       )}

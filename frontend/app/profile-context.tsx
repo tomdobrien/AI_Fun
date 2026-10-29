@@ -4,20 +4,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import type { Profile, SiteSession } from "@/lib/types";
 
-const emptyProfile: Profile = {
-  displayName: null,
-  headline: null,
-  introduction: null,
-  location: null,
-  contactEmail: null,
-  contactPhone: null,
-  experience: [],
-  selectedWork: [],
-  skills: [],
-  links: [],
-  awards: [],
-  education: [],
-};
+import { publicProfile } from "@/lib/public-profile";
 
 type PublicProfileState = {
   profile: Profile;
@@ -30,8 +17,8 @@ type PublicProfileState = {
 };
 
 export const PublicProfileContext = createContext<PublicProfileState>({
-  profile: emptyProfile,
-  loading: true,
+  profile: publicProfile,
+  loading: false,
   error: null,
   status: "checking",
   session: null,
@@ -41,13 +28,13 @@ export const PublicProfileContext = createContext<PublicProfileState>({
 
 export function PublicProfileProvider({ children }: Readonly<{ children: React.ReactNode }>) {
   const [state, setState] = useState<Omit<PublicProfileState, "can">>({
-    profile: emptyProfile, loading: true, error: null, status: "checking", session: null, publicPermissions: [],
+    profile: publicProfile, loading: false, error: null, status: "checking", session: null, publicPermissions: [],
   });
   const [revision, setRevision] = useState(0);
 
   useEffect(() => {
     const changed = () => {
-      setState({ profile: emptyProfile, loading: true, error: null, status: "checking", session: null, publicPermissions: [] });
+      setState({ profile: publicProfile, loading: false, error: null, status: "checking", session: null, publicPermissions: [] });
       setRevision((value) => value + 1);
     };
     window.addEventListener("profile-session-change", changed);
@@ -60,7 +47,7 @@ export function PublicProfileProvider({ children }: Readonly<{ children: React.R
     let controller: AbortController | null = null;
 
     function markOffline() {
-      if (active) setState({ profile: emptyProfile, session: null, publicPermissions: [], loading: false, error: "The server is currently unavailable.", status: "offline" });
+      if (active) setState({ profile: publicProfile, session: null, publicPermissions: [], loading: false, error: "The server is currently unavailable.", status: "offline" });
     }
 
     async function checkServer() {
@@ -72,8 +59,7 @@ export function PublicProfileProvider({ children }: Readonly<{ children: React.R
       const timeout = window.setTimeout(() => request.abort(), 5000);
       try {
         const [visitor, session] = await Promise.all([api.getPublicAccess(request.signal), api.getSiteSession(request.signal)]);
-        const mayViewProfile = visitor.permissions.includes("resume:view") || session?.isAdmin || session?.permissions.includes("resume:view");
-        const profile = mayViewProfile ? await api.getProfile(request.signal) : emptyProfile;
+        const profile = publicProfile;
         if (active) setState({ profile, session, publicPermissions: visitor.permissions, loading: false, error: null, status: "online" });
       } catch {
         markOffline();

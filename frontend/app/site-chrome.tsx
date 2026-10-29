@@ -4,7 +4,6 @@ import type { ReactNode } from "react";
 import ThemeToggle from "./theme-toggle";
 import { usePublicProfile } from "./profile-context";
 import SiteLink from "./site-link";
-import ServerNotice from "./server-notice";
 import { api } from "@/lib/api";
 
 const siteBasePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
@@ -18,28 +17,27 @@ const destinations = [
 type ActiveSection = typeof destinations[number]["id"];
 
 export default function SiteChrome({ children, active }: Readonly<{ children: ReactNode; active: ActiveSection }>) {
-  const { profile, session, can } = usePublicProfile();
+  const { profile, session } = usePublicProfile();
   const ownerName = profile.displayName?.trim() || "Private site";
-  const visibleDestinations = destinations.filter((item) => item.id === "home" ? Boolean(session) : item.id === "resume" ? can("resume:view") : Boolean(session) && (can("files:upload") || can("files:view")));
   const initials = ownerName.split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("");
 
   return <div className="personal-site">
+    <a className="skip-link" href="#main-content">Skip to content</a>
     <header className="site-header">
       <SiteLink className="site-wordmark" href={`${siteBasePath}/`} aria-label={`${ownerName}, home`}>
         <span className="site-monogram" aria-hidden="true">{initials || "T"}</span>
         <span className="site-wordmark-copy"><span>{ownerName}</span><span className="site-wordmark-note">Personal website</span></span>
       </SiteLink>
       <nav className="site-navigation" aria-label="Main navigation">
-        {visibleDestinations.map((item) => <SiteLink key={item.id} href={item.href} aria-current={active === item.id ? "page" : undefined}>{item.label}</SiteLink>)}
-        {session ? <button className="secondary-button" type="button" onClick={() => api.clearUploadSession()}>Log out</button> : <SiteLink href={`${siteBasePath}/`}>Sign in</SiteLink>}
+        {destinations.map((item) => <SiteLink key={item.id} href={item.href} aria-current={active === item.id ? "page" : undefined}>{item.label}</SiteLink>)}
+        {session && <button className="secondary-button" type="button" onClick={() => api.clearUploadSession()}>Log out</button>}
       </nav>
       <ThemeToggle />
     </header>
-    <ServerNotice />
-    {children}
+    <div id="main-content" className="site-content" tabIndex={-1}>{children}</div>
     <footer className="site-footer">
-      <span className="site-footer-note">Work, projects, and useful things.</span>
-      <span>{session && <><SiteLink href={`${siteBasePath}/terms/`}>Terms</SiteLink> · <SiteLink href={`${siteBasePath}/privacy/`}>Privacy</SiteLink> · <SiteLink href={`${siteBasePath}/acceptable-use/`}>Acceptable use</SiteLink> · </>}<SiteLink className="owner-corner-link" href={`${siteBasePath}/admin/`} aria-label="Administrator sign in">{session?.isAdmin ? "Administration" : "Administrator sign in"}</SiteLink></span>
+      <SiteLink className="owner-corner-link" href={`${siteBasePath}/admin/`} aria-label="Administrator sign in">{ownerName}</SiteLink>
+      <span className="footer-links"><SiteLink href={`${siteBasePath}/terms/`}>Terms</SiteLink><SiteLink href={`${siteBasePath}/privacy/`}>Privacy</SiteLink><SiteLink href={`${siteBasePath}/acceptable-use/`}>Acceptable use</SiteLink></span>
     </footer>
   </div>;
 }

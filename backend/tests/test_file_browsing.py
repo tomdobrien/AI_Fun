@@ -362,7 +362,7 @@ def test_permission_changes_apply_to_existing_sessions_and_playback_tickets(back
     owner = {**tokens["owner"], "Origin": "https://site.example"}
     assert client.put("/api/admin/upload-users/1/permissions", json={"permissions": []}, headers=owner).status_code == 200
     assert client.get("/api/session", headers=tokens["alice"]).json()["permissions"] == []
-    assert client.get("/api/profile", headers=tokens["alice"]).status_code == 403
+    assert client.get("/api/profile", headers=tokens["alice"]).status_code == 200
     assert client.get("/api/upload/files", headers=tokens["alice"]).status_code == 403
     for route in ("image", "text", "pdf"):
         assert client.get(f"/api/files/{route}", params={"file_id": photo.name}, headers=tokens["alice"]).status_code == 403
@@ -375,7 +375,7 @@ def test_permission_changes_apply_to_existing_sessions_and_playback_tickets(back
         assert client.get("/api/upload/files", headers=tokens["alice"]).status_code == (200 if may_view else 403)
         upload = client.post("/api/admin/photos", content=b"allowed", headers={**tokens["alice"], "Origin": "https://site.example", "X-File-Name": "allowed.txt"})
         assert upload.status_code == (200 if may_upload else 403)
-        assert client.get("/api/profile", headers=tokens["alice"]).status_code == (200 if permissions == ["resume:view"] else 403)
+        assert client.get("/api/profile", headers=tokens["alice"]).status_code == 200
 
 
 def test_only_admin_can_change_permissions_and_public_access(backups):
@@ -390,15 +390,15 @@ def test_only_admin_can_change_permissions_and_public_access(backups):
     assert client.put("/api/admin/public-access", json={"permissions": ["files:upload"]}, headers=owner).status_code == 422
     assert client.put("/api/admin/upload-users/1/permissions", json={"permissions": []}, headers={**tokens["owner"], "Origin": "https://bad.example"}).status_code == 403
     assert client.put("/api/admin/public-access", json={"permissions": []}, headers={**tokens["owner"], "Origin": "https://bad.example"}).status_code == 403
-    assert client.get("/api/access").json() == {"permissions": []}
-    assert client.get("/api/profile").status_code == 401
+    assert client.get("/api/access").json() == {"permissions": ["resume:view"]}
+    assert client.get("/api/profile").status_code == 200
     assert client.put("/api/admin/public-access", json={"permissions": ["resume:view"]}, headers=owner).status_code == 200
     assert client.get("/api/access").json() == {"permissions": ["resume:view"]}
     public = client.get("/api/profile")
     assert public.status_code == 200 and public.headers["cache-control"] == "no-store"
     assert client.get("/api/upload/files").status_code == 401
-    assert client.put("/api/admin/public-access", json={"permissions": []}, headers=owner).status_code == 200
-    assert client.get("/api/profile").status_code == 401
+    assert client.put("/api/admin/public-access", json={"permissions": []}, headers=owner).status_code == 409
+    assert client.get("/api/profile").status_code == 200
     assert client.get("/api/profile", headers=tokens["owner"]).status_code == 200
 
 
@@ -438,7 +438,7 @@ def test_disabled_account_cannot_use_site_session_or_profile(backups):
         user.disabled_at = utcnow()
         db.commit()
     assert client.get("/api/session", headers=tokens["alice"]).status_code == 401
-    assert client.get("/api/profile", headers=tokens["alice"]).status_code == 401
+    assert client.get("/api/profile", headers=tokens["alice"]).status_code == 200
 
 
 def test_cached_video_tickets_keep_variants_stable_and_permissions_enforced(backups, media_files):

@@ -4,8 +4,8 @@ import { PublicProfileProvider } from "./profile-context";
 import AvailabilityGate from "./availability-gate";
 
 export const metadata: Metadata = {
-  title: "Private site",
-  description: "Sign in to access shared features.",
+  title: "Thomas OBrien — Software Engineer",
+  description: "The personal website of Thomas OBrien. Background, experience, and a few useful tools.",
   robots: { index: false, follow: false },
 };
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

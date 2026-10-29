@@ -1,12 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { usePublicProfile } from "./profile-context";
 
 const preferenceKey = "personal-profile-theme";
 
 export default function ThemeToggle() {
-  const { status } = usePublicProfile();
   const [isDark, setIsDark] = useState(false);
 
   useEffect(() => {
@@ -38,7 +36,7 @@ export default function ThemeToggle() {
   }
 
   return (
-    <button className="theme-toggle" type="button" onClick={toggleTheme} disabled={status !== "online"}
+    <button className="theme-toggle" type="button" onClick={toggleTheme}
       aria-label={`Switch to ${isDark ? "light" : "dark"} mode`}
       aria-pressed={isDark} title={`Switch to ${isDark ? "light" : "dark"} mode`}>
       <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">

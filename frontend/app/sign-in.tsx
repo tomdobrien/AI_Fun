@@ -1,5 +1,6 @@
 "use client";
 
+import SiteChrome from "./site-chrome";
 import { useState } from "react";
 import { api } from "@/lib/api";
 import { usePublicProfile } from "./profile-context";
@@ -7,7 +8,7 @@ import { usePublicProfile } from "./profile-context";
 const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
 export default function SignIn() {
-  const { status, can } = usePublicProfile();
+  const { status } = usePublicProfile();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -22,17 +23,17 @@ export default function SignIn() {
     finally { setBusy(false); }
   }
 
-  return <main className="admin-shell private-entry">
+  return <SiteChrome active="upload"><main className="admin-shell private-entry">
     <form className="admin-login-card" onSubmit={login}>
-      <p className="eyebrow">Private site</p><h1>Sign in</h1>
-      <p className="admin-intro">Access is by invitation. Sign in to use the features shared with you.</p>
-      {status !== "online" && <p className="notice" role="status">{status === "checking" ? "Checking access…" : "The server is unavailable. Please try again shortly."}</p>}
+      <p className="eyebrow">Your private space</p><h1>File backup</h1>
+      <p className="admin-intro">Sign in to store and browse your files. Access is by invitation.</p>
+      {status !== "online" && <p className="notice" role="status">{status === "checking" ? "Checking server availability…" : "File backup is temporarily offline. Your files are unavailable until the server returns. The intro and resume are still here to explore."}</p>}
       {error && <p className="notice notice-error" role="alert">{error}</p>}
       <label className="admin-field">Email<input type="email" required autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} /></label>
       <label className="admin-field">Password<input type="password" required autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
       <button className="primary-button" disabled={busy || status !== "online"}>{busy ? "Signing in…" : "Sign in"}</button>
-      {can("resume:view") && <a className="site-text-link" href={`${basePath}/resume/`}>View public resume</a>}
+      <a className="site-text-link" href={`${basePath}/`}>← Back to the introduction</a>
       <a className="site-text-link" href={`${basePath}/admin/`}>Administrator sign in</a>
     </form>
-  </main>;
+  </main></SiteChrome>;
 }

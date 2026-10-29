@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
-import { routeAllowed } from "@/lib/access";
+import { isPublicRoute, routeAllowed } from "@/lib/access";
 import SignIn from "./sign-in";
 import { usePublicProfile } from "./profile-context";
 
@@ -16,6 +16,7 @@ export default function AvailabilityGate({ children }: { children: ReactNode }) 
     if (path !== "/invite") setInviteMounted(false);
     else if (status === "online") setInviteMounted(true);
   }, [path, status]);
+  if (isPublicRoute(path)) return children;
   // Preserve the one-time token after it has been removed from the address bar.
   if (path === "/invite" && (inviteMounted || status === "online")) return <>
     {status !== "online" && <SignIn />}

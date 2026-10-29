@@ -3,7 +3,7 @@
 import { usePublicProfile } from "./profile-context";
 
 export default function ResumeView() {
-  const { profile, loading, error } = usePublicProfile();
+  const { profile } = usePublicProfile();
   const skillsByCategory = profile.skills.reduce<Record<string, string[]>>((groups, skill) => {
     const category = skill.category?.trim() || "Additional skills";
     (groups[category] ??= []).push(skill.name);
@@ -16,18 +16,18 @@ export default function ResumeView() {
       <h1>{profile.displayName?.trim() ? `${profile.displayName.trim()} — resume` : "Resume"}</h1>
       {profile.headline && <p className="resume-page-headline">{profile.headline}</p>}
       {profile.introduction && <p className="resume-page-summary">{profile.introduction}</p>}
+      <div className="resume-contact">
+        {profile.location && <span>{profile.location}</span>}
+        {profile.contactEmail && <a href={`mailto:${profile.contactEmail}`}>{profile.contactEmail}</a>}
+      </div>
     </div>
 
     <section className="resume-document" aria-labelledby="resume-document-title">
       <div className="resume-document-heading">
         <div><p className="home-kicker">Career history</p><h2 id="resume-document-title">Selected experience</h2></div>
-        <span className="status-label">{loading ? "Loading" : error ? "Unavailable" : "Updated profile"}</span>
+        <button className="secondary-button print-resume" onClick={() => window.print()}>Print / save PDF <span aria-hidden="true">↗</span></button>
       </div>
-      {error && <p className="notice notice-error" role="alert">Profile details could not be loaded. Try refreshing the page.</p>}
-      {loading && <p className="notice" role="status">Loading profile information…</p>}
-      {!loading && !error && !profile.experience.length && !profile.selectedWork.length && !profile.skills.length && !profile.awards.length && !profile.education.length && !profile.links.length && <div className="empty-state"><span className="empty-mark" aria-hidden="true">+</span><div><h3>This page is ready for your story</h3><p>Experience, skills, awards, education, and selected work can be added in the profile editor.</p></div></div>}
-
-      {!loading && !error && <div className="resume-grid">
+      <div className="resume-grid">
         <section className="resume-section resume-section-wide"><h3>Professional experience</h3>
           {profile.experience.length ? profile.experience.map((item, i) => <article className="entry" key={`${item.employer}-${item.role}-${i}`}>
             <div className="entry-heading"><h4>{item.employer}{item.location ? <span className="entry-location"> · {item.location}</span> : null}</h4><span>{[item.startDate, item.endDate].filter(Boolean).join(" – ")}</span></div>
@@ -46,7 +46,7 @@ export default function ResumeView() {
         {profile.selectedWork.length > 0 && <section className="resume-section"><h3>Selected work</h3>{profile.selectedWork.map((item, i) => <article className="entry" key={`${item.title}-${i}`}><h4>{item.url ? <a href={item.url} target="_blank" rel="noreferrer">{item.title}</a> : item.title}</h4>{item.summary && <p>{item.summary}</p>}{item.technologies.length > 0 && <p className="entry-meta">{item.technologies.join(" · ")}</p>}</article>)}</section>}
 
         {profile.links.length > 0 && <section className="resume-section"><h3>Links</h3><ul className="link-list">{profile.links.map((link, i) => <li key={`${link.label}-${i}`}><a href={link.url} target="_blank" rel="noreferrer">{link.label}<span aria-hidden="true"> ↗</span></a></li>)}</ul></section>}
-      </div>}
+      </div>
     </section>
   </main>;
 }

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.models.upload_user import UploadUser, PublicAccess
+from app.models.upload_user import UploadUser
 from app.permissions import PERMISSIONS
 
 SESSION_COOKIE = "profile_admin_session"
@@ -132,16 +132,8 @@ def require_permission(permission: str):
 
 
 def public_permissions(db: Session) -> list[str]:
-    access = db.get(PublicAccess, 1)
-    return ["resume:view"] if access and "resume:view" in (access.permissions or []) else []
-
-
-def require_resume_access(request: Request, db: Session = Depends(get_db)) -> None:
-    if "resume:view" in public_permissions(db):
-        return
-    access = require_upload_access(request, db)
-    if not access.is_owner and "resume:view" not in access.permissions:
-        raise HTTPException(status_code=403, detail="Your account does not have access to the resume")
+    # The personal profile is public; only file features have account grants.
+    return ["resume:view"]
 
 
 def require_frontend_origin(request: Request) -> None:
