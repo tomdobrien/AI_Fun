@@ -29,7 +29,6 @@ export default function HomeView() {
             <span className="art-initials">TO<span>.</span></span><span className="art-caption">An engineer’s perspective</span>
           </div>
           <div className="panel-caption"><span>My background</span><span aria-hidden="true">↙</span></div>
-          <p className="panel-statement">Software thinking.<br /><em>Engineering roots.</em></p>
           <div className="panel-facts"><span>Currently <strong>CaptiveAire Systems</strong></span><span>Electrical &amp; computer engineering <strong>NC State University</strong></span></div>
         </aside>
       </section>
