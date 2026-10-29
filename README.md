@@ -1,4 +1,4 @@
-# Personal Profile
+# Profile Vault
 
 A local-first personal profile and resume site: FastAPI + SQLAlchemy + SQLite behind a Next.js / TypeScript frontend. Profile fields start empty; add real owner-provided content before sharing the site.
 
@@ -63,6 +63,10 @@ Conversion requires `/usr/bin/ffmpeg`, `/usr/bin/ffprobe`, and a systemd user ma
 Invited users have no download controls and cannot use the owner download API. Image preview requests require their session; video playback uses file-specific signed tickets that expire within ten minutes and never outlive the login session. Tickets cannot authorize downloads or access another account; disabled accounts lose playback access. The player supports range requests for seeking and renews playback tickets while open. It hides native download controls and suppresses the media context menu. Viewing necessarily transfers preview/video data to the browser, so these UI restrictions do not prevent capture or saving through browser tools. The Pi must be online for previews.
 
 ### GitHub Pages deployment
+
+The repository is `tomdobrien/profile-vault` (formerly `AI_Fun`). The Pages frontend is published at <https://tomdobrien.github.io/profile-vault/>. Repository links under the old name redirect, but update bookmarks to the new Pages address.
+
+An existing Pi checkout can remain at `~/AI_Fun`: `deploy/profile-api.service` deliberately retains that on-disk path. Renaming the GitHub repository does not move the server folder. For that existing checkout, update its remote with `git remote set-url origin https://github.com/tomdobrien/profile-vault.git`; a fresh deployment must align the service paths with its actual checkout location.
 
 The workflow in `.github/workflows/pages.yml` builds the frontend as static files and deploys it to GitHub Pages whenever `main` changes. In the repository settings, set **Pages → Build and deployment → Source** to **GitHub Actions**. Add a repository variable named `NEXT_PUBLIC_API_URL` with `https://conradspi4.tailb5b410.ts.net` before deploying. The Pi API is published through Tailscale Funnel and allows the Pages site's origin through `FRONTEND_ORIGIN`.
 
