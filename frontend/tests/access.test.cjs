@@ -10,7 +10,7 @@ vm.runInNewContext(ts.transpileModule(fs.readFileSync(require.resolve("../lib/ac
 const { routeAllowed, isPublicRoute } = context.exports;
 
 test("intro, resume and policies are public; files and unknown routes stay protected", () => {
-  for (const path of ["/", "/resume", "/privacy", "/terms", "/acceptable-use"]) {
+  for (const path of ["/", "/resume", "/privacy", "/terms", "/acceptable-use", "/guild-bounty"]) {
     assert.equal(isPublicRoute(path), true);
     assert.equal(routeAllowed(path, null, []), true);
   }

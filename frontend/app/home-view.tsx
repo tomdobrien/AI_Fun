@@ -48,6 +48,12 @@ export default function HomeView() {
             <span className="destination-cta">Go to file backup <span aria-hidden="true">→</span></span>
             <span className={`backup-status backup-status-${status}`}><span aria-hidden="true"/>{status === "online" ? "Server available" : status === "checking" ? "Checking server availability" : "Server offline · Please check back later"}</span>
           </SiteLink>
+          <SiteLink className="destination-card" href={`${basePath}/guild-bounty/`}>
+            <div className="destination-meta"><span>03 / Interactive example</span><span>Open to everyone</span></div>
+            <div className="destination-title"><h3>Guild Bounty</h3><span className="destination-arrow" aria-hidden="true">↗</span></div>
+            <p>A fantasy-inspired gaming bounty board prototype.</p>
+            <span className="destination-cta">Explore the board <span aria-hidden="true">→</span></span>
+          </SiteLink>
         </div>
       </section>
       {profile.contactEmail && <section className="contact-endnote" aria-label="Get in touch"><p>Have something in mind?<br /><span>I’d be glad to hear from you.</span></p><SiteLink href={`mailto:${profile.contactEmail}`}>{profile.contactEmail} <span aria-hidden="true">↗</span></SiteLink></section>}

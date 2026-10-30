@@ -1,7 +1,7 @@
 import type { SiteSession } from "./types";
 
 export function isPublicRoute(path: string): boolean {
-  return ["/", "/resume", "/terms", "/privacy", "/acceptable-use"].includes(path);
+  return ["/", "/resume", "/terms", "/privacy", "/acceptable-use", "/guild-bounty"].includes(path);
 }
 
 export function routeAllowed(path: string, session: SiteSession | null, publicPermissions: string[]): boolean {
